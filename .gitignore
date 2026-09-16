@@ -21,3 +21,6 @@ backend/*.egg-info/
 .DS_Store
 .vscode/
 .idea/
+
+# --- Claude Code (lokale, maschinenspezifische Einstellungen) ---
+.claude/settings.local.json

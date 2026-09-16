@@ -106,7 +106,7 @@ Format pro Eintrag: Datum, was gemacht wurde, was ggf. schiefgelaufen ist, wie e
 | Backend | Python (FastAPI), separater Service |
 | Backend-Hosting | Render (kostenloser Tier, Cold Start ~30-50s nach Inaktivität) |
 | Frontend | React + Vite + TypeScript |
-| Frontend-Hosting | Netlify (kostenloser Tier) |
+| Frontend-Hosting | Cloudflare Pages (kostenloser Tier) |
 | Vektordatenbank | Supabase (Postgres + pgvector) |
 | Datei-Storage | Supabase Storage |
 | Nutzerverwaltung | Single-User, kein Login |
@@ -160,8 +160,22 @@ Format pro Eintrag: Datum, was gemacht wurde, was ggf. schiefgelaufen ist, wie e
   - **Lösung:** `ssh-keyscan -t rsa,ed25519 github.com` ausgeführt und Ergebnis in `~/.ssh/known_hosts` eingetragen (Rechte auf `700`/`600` gesetzt). Mit `ssh -T git@github.com` verifiziert, dass die Authentifizierung danach funktioniert. Anschließend manueller `git push -u origin main` — erfolgreich. Das GitHub-Repo selbst war durch den vorherigen Befehl bereits korrekt angelegt worden, nur der Push scheiterte.
 
 **Offen (nächste Schritte, nicht Teil dieses Setups):**
-- Supabase-Projekt anlegen (Datenbank + pgvector + Storage), Keys in `.env` (lokal) und in Netlify/Render/GitHub-Secrets eintragen.
+- Supabase-Projekt anlegen (Datenbank + pgvector + Storage), Keys in `.env` (lokal) und in Cloudflare/Render/GitHub-Secrets eintragen.
 - Gemini API-Key über Google AI Studio erstellen, ebenso hinterlegen.
-- Netlify-Projekt mit dem GitHub-Repo verbinden (nutzt `netlify.toml`).
+- Cloudflare-Pages-Projekt mit dem GitHub-Repo verbinden (nutzt `frontend/wrangler.toml`).
 - Render-Service über `render.yaml`-Blueprint verbinden.
 - Eigentliche Kernfunktionen implementieren: Datei-Upload, RAG-Pipeline (Chunking, Embeddings, Retrieval, Chat), PPTX-Generierung.
+
+---
+
+## 2026-09-16 — Wechsel des Frontend-Hostings: Netlify → Cloudflare Pages
+
+**Getan:**
+- Nutzer äußerte nachträglich Unsicherheit bezüglich Netlify als Frontend-Host und bat um Alternativen.
+- Recherche zu aktuellen (Stand Sept. 2026) kostenlosen Static-Site-Hosting-Optionen durchgeführt: Cloudflare Pages, Vercel, GitHub Pages, Render Static Site, Netlify verglichen (Bandbreiten-Limits, Build-Minuten, GitHub-Integration).
+- **Ergebnis:** Cloudflare Pages gewählt — einziger verglichener Anbieter ohne Bandbreiten-Deckelung im Free Tier (500 Builds/Monat), genauso einfache GitHub-Integration wie Netlify.
+- Umsetzung: `netlify.toml` entfernt, stattdessen `frontend/wrangler.toml` (Cloudflare-Pages-Build-Konfiguration: Output-Verzeichnis `dist`) angelegt. `README.md` und `PROGRESS.md` (Architektur-Tabelle) entsprechend aktualisiert.
+
+**Probleme / Debugging:** keine.
+
+**Offen:** Cloudflare-Pages-Projekt muss noch im Cloudflare-Dashboard mit dem GitHub-Repo verbunden werden (Build-Verzeichnis `frontend`, Build-Command `npm run build`, Output `dist`) — Anleitung dazu in `README.md` unter "Deployment".

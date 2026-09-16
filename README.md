@@ -8,7 +8,7 @@ Der gesamte Projektverlauf — inklusive aller Entscheidungen, Probleme und Debu
 
 | Bereich | Technologie |
 |---|---|
-| Frontend | React + Vite + TypeScript, gehostet auf [Netlify](https://netlify.com) |
+| Frontend | React + Vite + TypeScript, gehostet auf [Cloudflare Pages](https://pages.cloudflare.com) |
 | Backend | Python (FastAPI), gehostet auf [Render](https://render.com) |
 | LLM & Embeddings | [Google Gemini API](https://aistudio.google.com) |
 | Vektordatenbank | [Supabase](https://supabase.com) (Postgres + pgvector) |
@@ -22,10 +22,10 @@ Details und Begründungen zu jeder Entscheidung stehen im Interview-Verlauf in `
 
 ```
 .
-├── frontend/           React + Vite + TypeScript App (Netlify)
+├── frontend/           React + Vite + TypeScript App (Cloudflare Pages)
+│   └── wrangler.toml    Cloudflare Pages Build-Konfiguration
 ├── backend/             FastAPI App (Render)
 ├── .github/workflows/    CI/CD-Pipelines
-├── netlify.toml         Netlify Build-Konfiguration
 ├── render.yaml           Render Blueprint (Backend)
 └── PROGRESS.md            Chronologischer Projekt-Verlauf
 ```
@@ -63,14 +63,14 @@ Die App ist dann unter `http://localhost:5173` erreichbar, das Backend unter `ht
 **Dieses Repository ist öffentlich.** Es dürfen niemals echte API-Keys oder Zugangsdaten committet werden.
 
 - Lokal: Werte in `.env` / `.env.local` eintragen (per `.gitignore` von Git ausgeschlossen).
-- Produktiv: Werte direkt in den Secret-Verwaltungen von [Netlify](https://docs.netlify.com/environment-variables/overview/), [Render](https://render.com/docs/configure-environment-variables) und den [GitHub-Actions-Secrets](https://docs.github.com/actions/security-guides/using-secrets-in-github-actions) hinterlegen.
+- Produktiv: Werte direkt in den Secret-Verwaltungen von [Cloudflare Pages](https://developers.cloudflare.com/pages/configuration/build-configuration/#environment-variables), [Render](https://render.com/docs/configure-environment-variables) und den [GitHub-Actions-Secrets](https://docs.github.com/actions/security-guides/using-secrets-in-github-actions) hinterlegen.
 - Jeder Push wird zusätzlich automatisch per [Gitleaks](https://github.com/gitleaks/gitleaks) auf versehentlich committete Secrets gescannt (`.github/workflows/ci.yml`).
 
 Benötigte Variablen stehen in `backend/.env.example` und `frontend/.env.example`.
 
 ## Deployment
 
-- **Frontend (Netlify):** automatisches Deployment bei Push auf `main`, Konfiguration in `netlify.toml`.
+- **Frontend (Cloudflare Pages):** Repo im [Cloudflare-Dashboard](https://dash.cloudflare.com) unter "Workers & Pages" verbinden, Build-Verzeichnis `frontend`, Build-Command `npm run build`, Output-Verzeichnis `dist` (siehe `frontend/wrangler.toml`). Danach automatisches Deployment bei jedem Push auf `main`.
 - **Backend (Render):** Deployment über das Blueprint in `render.yaml`.
 
 ## Tests & Qualitätssicherung
