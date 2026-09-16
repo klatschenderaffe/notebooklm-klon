@@ -264,3 +264,26 @@ Nutzer-Wunsch für die Reihenfolge der nächsten Schritte: zuerst Kernfunktionen
 - Beide Dateien liegen ausschließlich lokal beim Nutzer bzw. in Claudes eigenem Memory-Speicher, nicht im Repository.
 
 **Probleme / Debugging:** keine.
+
+---
+
+## 2026-09-16 — Gemini-API-Key eingerichtet & vollständiger End-to-End-Test aller Kernfunktionen
+
+**Getan:**
+- Nutzer hat über [Google AI Studio](https://aistudio.google.com/apikey) einen Gemini-API-Key erstellt und lokal in `backend/.env` eingetragen.
+- Backend neu gestartet — `GET /sources` weiterhin `200 OK`.
+- **Upload getestet** (echte Markdown-Testdatei mit Katzen-Inhalt über die Browser-UI hochgeladen): Text-Extraktion, Chunking, Gemini-Embeddings, Supabase-Storage-Upload und DB-Insert liefen vollständig durch, Datei erschien korrekt in der Quellenliste.
+- **Chat getestet:** Frage zur hochgeladenen Datei gestellt, korrekte, ausschließlich quellenbasierte Antwort mit Zitat erhalten (zweite Testfrage zur Ernährung ebenfalls korrekt beantwortet).
+- **Präsentationserstellung getestet:** PPTX für das Thema "Katzen als Haustiere" generiert, heruntergeladen (`~/Downloads/praesentation.pptx`, 30 KB) und mit `python-pptx` inhaltlich verifiziert: 3 Folien (Titel + 2 inhaltliche Folien "Allgemeine Merkmale" und "Ernährung"), Inhalte stimmen korrekt mit der Quelldatei überein.
+- Test-Quelle danach wieder gelöscht (`DELETE /sources/{id}` → `204`, Liste danach wieder leer), lokale Testdatei im Scratchpad entfernt.
+- **Damit sind alle drei Kernfunktionen (Upload, RAG-Chat, Präsentationserstellung) erstmals vollständig mit echten Credentials end-to-end verifiziert.**
+
+**Probleme / Debugging:**
+1. **Chat schlug zunächst zweimal fehl** mit `google.genai.errors.ServerError: 503 UNAVAILABLE` — *"This model is currently experiencing high demand"* für `gemini-3.8-flash` (unser bisheriger Standard, laut vorheriger Recherche erst am 2. September 2026 veröffentlicht). Embeddings liefen zu diesem Zeitpunkt bereits erfolgreich durch — das Problem betraf ausschließlich die Chat-Generierung.
+2. **Erster Fallback-Versuch fehlgeschlagen:** `GEMINI_CHAT_MODEL` testweise auf `gemini-2.5-flash` gesetzt (älteres, etablierteres Modell) → `404 NOT_FOUND`: *"This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash..."* — das Modell ist offenbar zwischenzeitlich vollständig eingestellt worden, nicht nur überlastet.
+3. **Fix:** `gemini-3.6-flash` (von Google selbst in der Fehlermeldung empfohlen) getestet — funktionierte sofort stabil und lieferte korrekte Antworten. Als neuen Code-Standard in `backend/app/config.py` (`gemini_chat_model`) sowie in `backend/.env.example` hinterlegt, mit Kommentar zur Begründung. Zeigt konkret, warum die Modellnamen bewusst konfigurierbar gemacht wurden (siehe früherer Eintrag zur Kernfunktions-Implementierung) — genau dieser Fall (schnelllebige Modellverfügbarkeit) trat postwendend ein.
+4. Ein kleiner UI-Nebeneffekt beobachtet: Bei den ersten beiden fehlgeschlagenen Chat-Versuchen zeigte ein Zwischen-Screenshot nur die erste Fehlermeldung, obwohl laut Backend-Log bereits eine zweite Anfrage verarbeitet wurde — vermutlich nur ein Timing-Artefakt beim Screenshot (React-Update noch nicht gerendert), kein reproduzierbares Problem; ein späterer Screenshot zeigte beide Versuche korrekt.
+
+**Bekannte Lücke (kein Bug, aber notiert):** `DELETE /sources/{id}` löscht die Datei aktuell nur aus der Datenbank (per `on delete cascade` auch die zugehörigen Chunks), aber **nicht** aus dem Supabase-Storage-Bucket — die Originaldatei bleibt dort verwaist liegen. Für den aktuellen Testfall unkritisch, aber als Backlog-Punkt in der lokalen `TODO.md` vermerkt.
+
+**Nächster Schritt:** Backend-Deployment auf Render, danach Frontend-Deployment auf Cloudflare Pages, danach `ALLOWED_ORIGINS` auf die echte Cloudflare-Domain aktualisieren und ein Produktions-Smoke-Test.
