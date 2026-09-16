@@ -253,3 +253,14 @@ Nutzer-Wunsch für die Reihenfolge der nächsten Schritte: zuerst Kernfunktionen
 - Backend-Tests weiterhin grün (22 Tests, inkl. der 2 neuen für den Content-Type-Fix), `ruff`/`mypy` sauber.
 
 **Nächster Schritt:** Commit + Push dieses Standes (Storage-Content-Type-Fix, erweitertes `schema.sql` mit Grants, README-Abschnitt "Supabase Setup"). Danach: Gemini-API-Key einrichten, dann End-to-End-Test mit echtem Upload/Chat/Präsentation, danach Cloudflare-Deployment.
+
+---
+
+## 2026-09-16 — Backup außerhalb des Repos: TODO-Liste & Claude-Memory
+
+**Getan:**
+- Auf Wunsch des Nutzers eine vollständige, gruppierte `TODO.md` mit allen noch offenen Aufgaben erstellt (Gemini-Setup, End-to-End-Tests, Render-Deployment, Cloudflare-Deployment, spätere Beobachtungspunkte) — **bewusst nicht Teil des Git-Repos**, da der Nutzer das explizit so wollte (Repo ist öffentlich, die TODO-Liste ist reine private Arbeitsplanung). In `.gitignore` als `TODO.md` ausgeschlossen, README-Verweis darauf wieder entfernt.
+- Zusätzlich eine persistente Claude-Code-Memory (außerhalb des Projektverzeichnisses, unter `~/.claude/projects/.../memory/notebooklm-klon-project-status.md`) angelegt: eine kurze Orientierungs-Notiz mit Tech-Stack-Entscheidungen, aktuellem Stand und Verweis auf `PROGRESS.md`/`TODO.md` als eigentliche Quelle der Wahrheit — als Backup, falls diese Chat-Session verloren geht und eine neue Session ohne Kontext an diesem Projekt weiterarbeiten muss.
+- Beide Dateien liegen ausschließlich lokal beim Nutzer bzw. in Claudes eigenem Memory-Speicher, nicht im Repository.
+
+**Probleme / Debugging:** keine.

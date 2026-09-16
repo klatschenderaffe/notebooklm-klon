@@ -24,3 +24,6 @@ backend/*.egg-info/
 
 # --- Claude Code (lokale, maschinenspezifische Einstellungen) ---
 .claude/settings.local.json
+
+# --- Lokale Arbeitsdateien, bewusst nicht im (öffentlichen) Repo (Nutzerwunsch) ---
+TODO.md
