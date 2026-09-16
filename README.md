@@ -58,6 +58,16 @@ npm run dev
 
 Die App ist dann unter `http://localhost:5173` erreichbar, das Backend unter `http://localhost:8000`.
 
+## Supabase Setup
+
+1. Projekt auf [supabase.com](https://supabase.com) anlegen.
+2. Beim Projekt-Setup unter „Data API"-Optionen: **Enable Data API** an, **Automatically expose new tables** aus (nur relevant für `anon`/`authenticated`, siehe Grants unten), **Enable automatic RLS** an (schadet `service_role` nicht, siehe unten).
+3. **SQL Editor** → Inhalt von [`backend/supabase/schema.sql`](./backend/supabase/schema.sql) ausführen. Das Schema enthält auch die nötigen `GRANT`-Statements für `service_role` — ohne "Automatically expose new tables" vergibt Supabase bei per SQL angelegten Tabellen sonst keine Rechte, selbst für `service_role` nicht (`service_role` umgeht zwar immer Row-Level-Security, aber nicht die separate SQL-`GRANT`-Ebene).
+4. **Storage** → neuer Bucket `sources`, **privat** (kein "Public bucket"), Size-Limit 20 MB (passend zu `MAX_UPLOAD_SIZE_BYTES` in `backend/app/config.py`), erlaubte MIME-Types: `application/pdf`, `text/markdown`, `text/x-markdown`, `text/plain`.
+5. **Project Settings → Data API** → **Project URL** kopieren. Wichtig: die reine Projekt-URL (`https://<ref>.supabase.co`) verwenden, **nicht** die dort ebenfalls angezeigte REST-Endpoint-URL mit `/rest/v1/`-Suffix — der `supabase-py`-Client hängt diesen Pfad selbst an.
+6. Dort ebenfalls den **`service_role`**-Key kopieren (nicht `anon public`).
+7. Beide Werte in `backend/.env` eintragen (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`).
+
 ## Secrets & Umgebungsvariablen
 
 **Dieses Repository ist öffentlich.** Es dürfen niemals echte API-Keys oder Zugangsdaten committet werden.

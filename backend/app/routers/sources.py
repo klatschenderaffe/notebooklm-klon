@@ -45,7 +45,7 @@ async def upload_source(file: UploadFile) -> dict:
     embeddings = embed_texts(chunks, task_type="RETRIEVAL_DOCUMENT")
 
     source_id = str(uuid.uuid4())
-    storage_path = storage.upload_source_file(source_id, file.filename, content)
+    storage_path = storage.upload_source_file(source_id, file.filename, content, file_type)
     source = vector_store.insert_source(source_id, file.filename, file_type, storage_path)
     vector_store.insert_chunks(source_id, chunks, embeddings)
 

@@ -231,3 +231,25 @@ Nutzer-Wunsch für die Reihenfolge der nächsten Schritte: zuerst Kernfunktionen
 **Probleme / Debugging:** Der gemeldete Overflow-Bug selbst (siehe Ursache oben) — kein weiterer Debugging-Aufwand nötig, direkt reproduzierbar und behoben.
 
 **Nächster Schritt:** Weiterhin wie zuvor — Supabase-Projekt live einrichten, danach Gemini-Key, danach Cloudflare-Deployment. Commit/Push für die Kernfunktionen (inkl. dieses CSS-Fixes) steht noch aus, wartet auf Freigabe durch den Nutzer.
+
+---
+
+## 2026-09-16 — Supabase-Projekt live eingerichtet (mit zwei gefundenen Bugs)
+
+**Getan:**
+- Nutzer hat Supabase-Account + Projekt `notebooklm-klon` angelegt (geführt Schritt für Schritt, Account-Erstellung selbst durfte/wollte ich nicht übernehmen).
+- Beim Projekt-Setup nach den drei „Data API"-Optionen gefragt worden. Empfehlung gegeben: **Enable Data API** an (Pflicht für `supabase-py`), **Automatically expose new tables** aus (Supabase-Empfehlung, sollte nur `anon`/`authenticated` betreffen), **Enable automatic RLS** an (unschädlich für `service_role`, da dieser RLS immer umgeht).
+- Schema aus `backend/supabase/schema.sql` im SQL Editor ausgeführt.
+- Storage-Bucket `sources` angelegt: privat, 20 MB Limit, MIME-Whitelist (`application/pdf`, `text/markdown`, `text/x-markdown`, `text/plain`).
+- Dabei proaktiv einen Zuverlässigkeitsbug im eigenen Code gefunden und behoben, bevor er unter echten Bedingungen aufgefallen wäre: `storage.py` setzte beim Upload keinen expliziten `Content-Type`, sondern verließ sich auf Auto-Erkennung durch die Supabase-Bibliothek — bei der neu eingerichteten MIME-Type-Restriktion auf dem Bucket hätte das bei `.md`-Dateien potenziell fehlschlagen können. Fix: `upload_source_file()` nimmt jetzt einen expliziten `file_type`-Parameter und setzt `file_options={"content-type": ...}` explizit (`application/pdf` bzw. `text/markdown`). Mit zwei neuen Tests (`test_storage.py`) abgesichert, die die tatsächlich übergebenen Content-Type-Werte prüfen.
+- `SUPABASE_URL` und `SUPABASE_SERVICE_KEY` vom Nutzer lokal in `backend/.env` eingetragen (nicht im Chat geteilt), Backend neu gestartet und `GET /sources` getestet.
+
+**Probleme / Debugging (zwei echte Bugs):**
+1. **Erster Fehlversuch — falsche URL-Form:** `GET /sources` schlug mit `postgrest.exceptions.APIError: {'message': 'Invalid path specified in request URL', 'code': 'PGRST125'}` fehl. Ursache: In `.env` stand die REST-Endpoint-URL inkl. `/rest/v1/`-Suffix statt der reinen Projekt-URL — Supabase zeigt im Dashboard beide URLs an, `supabase-py` erwartet aber die reine Projekt-URL und hängt `/rest/v1/` selbst an, wodurch der Pfad doppelt vorkam. **Fix:** `/rest/v1/`-Suffix aus `SUPABASE_URL` entfernt (per `sed`, da nur eine nicht-geheime URL betroffen war). Jetzt in `README.md` unter "Supabase Setup" explizit dokumentiert, damit das nicht erneut passiert.
+2. **Zweiter Fehlversuch — fehlende Rechte:** Danach `postgrest.exceptions.APIError: {'message': 'permission denied for table sources', 'code': '42501', 'hint': 'Grant the required privileges to the current role with: GRANT SELECT ON public.sources TO service_role;'}`.
+   - **Eigene Fehleinschätzung zuvor:** Bei der Empfehlung, "Automatically expose new tables" zu deaktivieren, war die Begründung, dies betreffe nur `anon`/`authenticated` und `service_role` habe ohnehin immer vollen Zugriff. Das war **falsch** bzw. unvollständig: `service_role` umgeht zwar immer Row-Level-Security (RLS), aber die separate SQL-`GRANT`-Rechteebene ist davon unabhängig — und ohne "Automatically expose new tables" vergibt Supabase bei per SQL (statt über den Table Editor) angelegten Tabellen offenbar **keine** automatischen Grants, auch nicht für `service_role`.
+   - **Fix:** Explizite `GRANT`/`ALTER DEFAULT PRIVILEGES`-Statements für `service_role` ergänzt und dauerhaft in `backend/supabase/schema.sql` versioniert (nicht nur einmalig im Dashboard ausgeführt), damit das Schema beim nächsten Mal (z.B. neues Supabase-Projekt) reproduzierbar korrekt ist. Vom Nutzer im SQL Editor ausgeführt.
+   - Nach beiden Fixes: `curl http://localhost:8000/sources` liefert `200 OK` mit `[]`. Im Browser verifiziert: kein Fehlerbanner mehr im Frontend.
+- Backend-Tests weiterhin grün (22 Tests, inkl. der 2 neuen für den Content-Type-Fix), `ruff`/`mypy` sauber.
+
+**Nächster Schritt:** Commit + Push dieses Standes (Storage-Content-Type-Fix, erweitertes `schema.sql` mit Grants, README-Abschnitt "Supabase Setup"). Danach: Gemini-API-Key einrichten, dann End-to-End-Test mit echtem Upload/Chat/Präsentation, danach Cloudflare-Deployment.

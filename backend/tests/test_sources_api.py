@@ -25,7 +25,7 @@ def test_upload_source_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         storage,
         "upload_source_file",
-        lambda source_id, filename, content: f"{source_id}/{filename}",
+        lambda source_id, filename, content, file_type: f"{source_id}/{filename}",
     )
     monkeypatch.setattr(
         vector_store,
