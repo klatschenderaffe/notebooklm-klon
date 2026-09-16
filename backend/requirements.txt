@@ -1,0 +1,8 @@
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+pydantic-settings==2.15.0
+python-multipart==0.0.32
+google-genai==2.23.0
+supabase==2.31.0
+pypdf==6.19.0
+python-pptx==1.0.2
