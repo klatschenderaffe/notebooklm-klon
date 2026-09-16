@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
+import { listSources, type Source } from './api'
+import ChatPanel from './components/ChatPanel'
+import PresentationPanel from './components/PresentationPanel'
+import SourcesPanel from './components/SourcesPanel'
 
 type Theme = 'light' | 'dark'
-type BackendStatus = 'pending' | 'ok' | 'error'
-
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 function getInitialTheme(): Theme {
   const stored = localStorage.getItem('theme')
@@ -14,24 +15,23 @@ function getInitialTheme(): Theme {
 
 function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme)
-  const [backendStatus, setBackendStatus] = useState<BackendStatus>('pending')
+  const [sources, setSources] = useState<Source[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('theme', theme)
   }, [theme])
 
-  useEffect(() => {
-    fetch(`${API_URL}/health`)
-      .then((res) => (res.ok ? setBackendStatus('ok') : setBackendStatus('error')))
-      .catch(() => setBackendStatus('error'))
+  const refreshSources = useCallback(() => {
+    listSources()
+      .then(setSources)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Laden fehlgeschlagen'))
   }, [])
 
-  const statusLabel: Record<BackendStatus, string> = {
-    pending: 'Prüfe Backend-Verbindung …',
-    ok: 'Backend erreichbar',
-    error: 'Backend nicht erreichbar',
-  }
+  useEffect(() => {
+    refreshSources()
+  }, [refreshSources])
 
   return (
     <>
@@ -47,20 +47,13 @@ function App() {
       </header>
 
       <main className="app-main">
-        <div className="upload-card">
-          <h2>Dateien hochladen</h2>
-          <p className="subtitle">
-            Lade deine Quellen hoch und stelle anschließend Fragen dazu — die KI antwortet
-            ausschließlich auf Basis dieser Dateien.
-          </p>
-          <div className="dropzone">Datei-Upload folgt in einem späteren Schritt</div>
-          <p className="filetypes">
-            Unterstützte Dateitypen: <code>.pdf</code> <code>.md</code>
-          </p>
-          <p className="status-line">
-            <span className={`status-dot ${backendStatus}`} />
-            {statusLabel[backendStatus]}
-          </p>
+        {loadError && <p className="error-text banner">{loadError}</p>}
+        <div className="layout">
+          <div className="layout-column">
+            <SourcesPanel sources={sources} onSourcesChange={refreshSources} />
+            <PresentationPanel hasSources={sources.length > 0} />
+          </div>
+          <ChatPanel hasSources={sources.length > 0} />
         </div>
       </main>
     </>

@@ -1,14 +1,18 @@
+/* Mobile-first: Basis-Styles gelten für schmale Viewports, Media Queries (min-width)
+   schalten ab einer Breite auf das Desktop-Layout um. */
+
 .app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 32px;
+  gap: 12px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .app-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.2px;
 }
@@ -19,7 +23,9 @@
   color: var(--text);
   border-radius: 8px;
   padding: 8px 12px;
-  font-size: 14px;
+  min-height: 40px;
+  font-size: 13px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -29,44 +35,57 @@
 
 .app-main {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
+  padding: 16px;
 }
 
-.upload-card {
-  width: 100%;
-  max-width: 520px;
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.layout-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 40px;
-  text-align: center;
+  padding: 16px;
+  min-width: 0;
 }
 
-.upload-card h2 {
-  margin: 0 0 8px;
-  font-size: 22px;
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
   font-weight: 600;
 }
 
-.upload-card .subtitle {
-  margin: 0 0 28px;
-  color: var(--text-muted);
-  font-size: 14px;
-}
-
 .dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   border: 1.5px dashed var(--border);
   border-radius: 12px;
-  padding: 32px 16px;
+  padding: 20px 12px;
   color: var(--text-muted);
   font-size: 14px;
+  cursor: pointer;
+}
+
+.dropzone:hover {
+  border-color: var(--accent);
 }
 
 .filetypes {
-  margin-top: 16px;
+  margin: 12px 0 0;
   font-size: 13px;
   color: var(--text-muted);
 }
@@ -79,28 +98,218 @@
   padding: 1px 6px;
 }
 
-.status-line {
-  margin-top: 24px;
+.source-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.source-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  min-width: 0;
+}
+
+.source-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.source-empty {
+  color: var(--text-muted);
   font-size: 13px;
+}
+
+.icon-button {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 4px;
+}
+
+.icon-button:hover {
+  color: #ef4444;
+}
+
+/* Formulare mit langem Button-Label (z.B. "Als PPTX herunterladen") stapeln sich auf
+   allen Breiten, statt in einer Zeile über den Panel-Rand hinauszulaufen. */
+.presentation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+.chat-messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.chat-empty {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.chat-message {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.chat-message p {
+  margin: 0;
+}
+
+.chat-message.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.chat-message.assistant {
+  align-self: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.citations {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
-.status-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 6px;
+.chat-input-row {
+  display: flex;
+  gap: 8px;
 }
 
-.status-dot.ok {
-  background: #22c55e;
+.chat-input-row input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.status-dot.error {
-  background: #ef4444;
+.chat-input-row button {
+  flex-shrink: 0;
 }
 
-.status-dot.pending {
-  background: #9a9a9a;
+input[type='text'] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: 16px; /* verhindert Auto-Zoom bei Fokus auf iOS */
+  padding: 10px 12px;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+input[type='text']:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  font: inherit;
+}
+
+form button[type='submit'] {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+form button[type='submit']:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error-text {
+  color: #ef4444;
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.error-text.banner {
+  max-width: 1100px;
+  margin: 0 auto 16px;
+}
+
+/* --- Desktop (ab 800px): zweispaltiges Layout, mehr Innenabstand --- */
+@media (min-width: 800px) {
+  .app-header {
+    padding: 20px 32px;
+  }
+
+  .app-title {
+    font-size: 18px;
+  }
+
+  .app-main {
+    padding: 32px;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 380px) 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  .layout-column {
+    gap: 24px;
+  }
+
+  .panel {
+    padding: 24px;
+  }
+
+  .panel h2 {
+    font-size: 16px;
+    margin-bottom: 16px;
+  }
+}
+
+/* --- Ab 480px passt Eingabefeld + kurzer Button ("Senden") nebeneinander --- */
+@media (min-width: 480px) {
+  .chat-input-row button[type='submit'] {
+    width: auto;
+  }
 }
