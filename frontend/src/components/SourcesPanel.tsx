@@ -4,10 +4,17 @@ import { deleteSource, uploadSource } from '../api'
 
 interface SourcesPanelProps {
   sources: Source[]
+  selectedSourceIds: Set<string>
+  onToggleSource: (id: string) => void
   onSourcesChange: () => void
 }
 
-function SourcesPanel({ sources, onSourcesChange }: SourcesPanelProps) {
+function SourcesPanel({
+  sources,
+  selectedSourceIds,
+  onToggleSource,
+  onSourcesChange,
+}: SourcesPanelProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -68,7 +75,14 @@ function SourcesPanel({ sources, onSourcesChange }: SourcesPanelProps) {
       <ul className="source-list">
         {sources.map((source) => (
           <li key={source.id} className="source-item">
-            <span className="source-name">{source.filename}</span>
+            <label className="source-checkbox-label">
+              <input
+                type="checkbox"
+                checked={selectedSourceIds.has(source.id)}
+                onChange={() => onToggleSource(source.id)}
+              />
+              <span className="source-name">{source.filename}</span>
+            </label>
             <button
               type="button"
               className="icon-button"
@@ -81,6 +95,11 @@ function SourcesPanel({ sources, onSourcesChange }: SourcesPanelProps) {
         ))}
         {sources.length === 0 && <li className="source-empty">Noch keine Quellen hochgeladen</li>}
       </ul>
+      {sources.length > 0 && (
+        <p className="hint-text">
+          Abgewählte Quellen werden bei der Präsentationserstellung nicht berücksichtigt.
+        </p>
+      )}
     </section>
   )
 }

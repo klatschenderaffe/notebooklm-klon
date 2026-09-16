@@ -6,6 +6,7 @@ from google import genai
 from google.genai import types
 
 from app.config import settings
+from app.services.design import ALLOWED_FONTS
 
 SYSTEM_INSTRUCTION = (
     "Du bist ein Assistent, der ausschließlich auf Basis der bereitgestellten Quellenausschnitte "
@@ -49,12 +50,31 @@ def generate_answer(question: str, context_chunks: list[str]) -> str:
     return response.text or ""
 
 
-def generate_presentation_outline(topic: str, context_chunks: list[str]) -> dict[str, Any]:
+def generate_presentation_outline(
+    topic: str,
+    context_chunks: list[str],
+    design_description: str | None = None,
+    tone: str | None = None,
+    slide_count_hint: str | None = None,
+) -> dict[str, Any]:
     context = "\n\n---\n\n".join(context_chunks)
-    prompt = (
-        f"Erstelle eine Präsentationsgliederung zum Thema: {topic}\n\n"
-        f"Quellenausschnitte:\n\n{context}"
-    )
+    instructions = [f"Erstelle eine Präsentationsgliederung zum Thema: {topic}"]
+    if tone:
+        instructions.append(f"Sprachlicher Stil/Ton der Texte: {tone}")
+    if slide_count_hint:
+        instructions.append(f"Ungefähre gewünschte Foliezahl (ohne Titelfolie): {slide_count_hint}")
+    if design_description:
+        instructions.append(
+            f"Gewünschtes visuelles Design (Farben/Stimmung): {design_description}"
+        )
+    else:
+        instructions.append(
+            "Kein Design gewünscht — wähle ein neutrales, modernes, gut lesbares Farbschema."
+        )
+    instructions.append(f"Quellenausschnitte:\n\n{context}")
+    prompt = "\n\n".join(instructions)
+
+    font_enum = ALLOWED_FONTS
     response = get_client().models.generate_content(
         model=settings.gemini_chat_model,
         contents=prompt,
@@ -65,6 +85,30 @@ def generate_presentation_outline(topic: str, context_chunks: list[str]) -> dict
                 "type": "object",
                 "properties": {
                     "title": {"type": "string"},
+                    "design": {
+                        "type": "object",
+                        "description": (
+                            "Farbschema passend zur gewünschten Design-Beschreibung "
+                            "(oder neutral/modern falls keine angegeben ist). "
+                            "background_color/accent_color/text_color müssen Hex-Farbcodes "
+                            "im Format #RRGGBB sein, mit gutem Kontrast zwischen text_color "
+                            "und background_color."
+                        ),
+                        "properties": {
+                            "background_color": {"type": "string"},
+                            "accent_color": {"type": "string"},
+                            "text_color": {"type": "string"},
+                            "heading_font": {"type": "string", "enum": font_enum},
+                            "body_font": {"type": "string", "enum": font_enum},
+                        },
+                        "required": [
+                            "background_color",
+                            "accent_color",
+                            "text_color",
+                            "heading_font",
+                            "body_font",
+                        ],
+                    },
                     "slides": {
                         "type": "array",
                         "items": {
@@ -77,7 +121,7 @@ def generate_presentation_outline(topic: str, context_chunks: list[str]) -> dict
                         },
                     },
                 },
-                "required": ["title", "slides"],
+                "required": ["title", "design", "slides"],
             },
         ),
     )

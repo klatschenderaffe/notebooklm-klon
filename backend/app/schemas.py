@@ -25,3 +25,6 @@ class ChatResponse(BaseModel):
 class PresentationRequest(BaseModel):
     topic: str
     source_ids: list[str] | None = None
+    design_description: str | None = None
+    tone: str | None = None
+    slide_count_hint: str | None = None

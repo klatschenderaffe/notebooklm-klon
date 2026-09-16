@@ -4,7 +4,7 @@
   --text: #1a1a1a;
   --text-muted: #6b6b6b;
   --border: #e3e3e3;
-  --accent: #7c3aed;
+  --accent: #16a34a;
   --accent-contrast: #ffffff;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -27,8 +27,8 @@
     --text: #f0f0f0;
     --text-muted: #9a9a9a;
     --border: #2e2e2e;
-    --accent: #a78bfa;
-    --accent-contrast: #121212;
+    --accent: #4ade80;
+    --accent-contrast: #052e16;
     color-scheme: dark;
   }
 }
@@ -39,8 +39,8 @@
   --text: #f0f0f0;
   --text-muted: #9a9a9a;
   --border: #2e2e2e;
-  --accent: #a78bfa;
-  --accent-contrast: #121212;
+  --accent: #4ade80;
+  --accent-contrast: #052e16;
   color-scheme: dark;
 }
 

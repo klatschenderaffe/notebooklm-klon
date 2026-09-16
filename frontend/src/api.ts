@@ -55,11 +55,25 @@ export async function sendChatMessage(question: string): Promise<ChatResponse> {
   return response.json()
 }
 
-export async function generatePresentation(topic: string): Promise<Blob> {
+export interface PresentationOptions {
+  topic: string
+  sourceIds?: string[]
+  designDescription?: string
+  tone?: string
+  slideCountHint?: string
+}
+
+export async function generatePresentation(options: PresentationOptions): Promise<Blob> {
   const response = await fetch(`${API_URL}/presentations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topic }),
+    body: JSON.stringify({
+      topic: options.topic,
+      source_ids: options.sourceIds,
+      design_description: options.designDescription || null,
+      tone: options.tone || null,
+      slide_count_hint: options.slideCountHint || null,
+    }),
   })
   if (!response.ok) throw new Error(await parseErrorMessage(response))
   return response.blob()

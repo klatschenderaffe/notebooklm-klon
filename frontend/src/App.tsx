@@ -16,6 +16,7 @@ function getInitialTheme(): Theme {
 function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme)
   const [sources, setSources] = useState<Source[]>([])
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set())
   const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -25,13 +26,32 @@ function App() {
 
   const refreshSources = useCallback(() => {
     listSources()
-      .then(setSources)
+      .then((newSources) => {
+        setSources(newSources)
+        setSelectedSourceIds((prev) => {
+          const validIds = new Set(newSources.map((s) => s.id))
+          const next = new Set([...prev].filter((id) => validIds.has(id)))
+          for (const s of newSources) {
+            if (!prev.has(s.id)) next.add(s.id)
+          }
+          return next
+        })
+      })
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Laden fehlgeschlagen'))
   }, [])
 
   useEffect(() => {
     refreshSources()
   }, [refreshSources])
+
+  function toggleSource(id: string) {
+    setSelectedSourceIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   return (
     <>
@@ -50,8 +70,16 @@ function App() {
         {loadError && <p className="error-text banner">{loadError}</p>}
         <div className="layout">
           <div className="layout-column">
-            <SourcesPanel sources={sources} onSourcesChange={refreshSources} />
-            <PresentationPanel hasSources={sources.length > 0} />
+            <SourcesPanel
+              sources={sources}
+              selectedSourceIds={selectedSourceIds}
+              onToggleSource={toggleSource}
+              onSourcesChange={refreshSources}
+            />
+            <PresentationPanel
+              hasSources={sources.length > 0}
+              selectedSourceIds={[...selectedSourceIds]}
+            />
           </div>
           <ChatPanel hasSources={sources.length > 0} />
         </div>

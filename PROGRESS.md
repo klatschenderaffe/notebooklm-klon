@@ -287,3 +287,30 @@ Nutzer-Wunsch für die Reihenfolge der nächsten Schritte: zuerst Kernfunktionen
 **Bekannte Lücke (kein Bug, aber notiert):** `DELETE /sources/{id}` löscht die Datei aktuell nur aus der Datenbank (per `on delete cascade` auch die zugehörigen Chunks), aber **nicht** aus dem Supabase-Storage-Bucket — die Originaldatei bleibt dort verwaist liegen. Für den aktuellen Testfall unkritisch, aber als Backlog-Punkt in der lokalen `TODO.md` vermerkt.
 
 **Nächster Schritt:** Backend-Deployment auf Render, danach Frontend-Deployment auf Cloudflare Pages, danach `ALLOWED_ORIGINS` auf die echte Cloudflare-Domain aktualisieren und ein Produktions-Smoke-Test.
+
+---
+
+## 2026-09-16 — Präsentations-Design, Quellen-Auswahl, grüne Akzentfarbe, Google-Drive-Button
+
+Nutzer war mit der Optik der generierten Präsentationen unzufrieden ("sieht lieblos aus") und wollte vor dem Deployment mehrere UX-Verbesserungen: Design-Beschreibung als Eingabefeld, grüne Akzentfarbe, direktes Öffnen in Google Präsentationen, weitere Einstellungsmöglichkeiten.
+
+**Getan:**
+- **Präsentations-Design überarbeitet:** `backend/app/services/design.py` (neu) — Liste zuverlässig verfügbarer Schriftarten, Default-Farbschema, `validate_design()` mit Feld-für-Feld-Fallback (nie Alles-oder-nichts). `gemini_client.generate_presentation_outline()` liefert jetzt zusätzlich ein von Gemini passend zur Design-Beschreibung gewähltes Farbschema (Hex-Codes, Kontrast-Vorgabe) sowie Schriftart aus der erlaubten Liste. `presentation.py` komplett umgebaut: 16:9-Breitbildformat (vorher veraltetes 4:3), Hintergrundfarbe/Textfarbe/Schriftart/Akzent-Balken pro Folie aus dem Design angewendet, saubere manuelle Layouts statt Standard-Platzhaltern.
+- **Weitere Einstellungen ergänzt** (Nutzer-Auswahl aus vorgeschlagenen Ideen): Ton/Stil des Texts (Formell/Locker/Einfach erklärt), Ziel-Foliezahl als Hinweis (kurz/mittel/lang), Farbschema-Presets (Minimal/Bunt/Dunkel/Corporate) als Schnellauswahl-Buttons, die die Freitext-Design-Beschreibung befüllen, sowie Checkboxen an den Quellen zur gezielten Auswahl, welche Dateien in eine Präsentation einfließen (Backend unterstützte `source_ids` bereits, jetzt auch UI dafür — Auswahl-State in `App.tsx` gehoben, da `SourcesPanel` und `PresentationPanel` ihn beide brauchen).
+- **Akzentfarbe auf Grün geändert:** `index.css`, Light `#16a34a` / Dark `#4ade80`, jeweils mit passendem Kontrasttext.
+- **"In Google Präsentationen öffnen":** Einfache Variante gewählt (statt vollständiger OAuth-Integration, um keine zusätzlichen Google-Cloud-Secrets/Angriffsfläche für dieses Single-User-Tool einzuführen) — nach dem PPTX-Download öffnet ein Button `https://drive.google.com/drive/my-drive` in neuem Tab; Nutzer zieht die Datei manuell per Drag & Drop hinein, Google konvertiert automatisch zu Google Slides.
+- Vollständige Test-Abdeckung für die neuen Backend-Pfade (Design-Validierung, Farbanwendung, 16:9-Format) ergänzt/angepasst.
+
+**Bild-Generierung — implementiert, dann wieder entfernt (wichtige Korrektur):**
+- Nutzer fragte nach echten KI-generierten Bildern pro Folie statt nur Farben/Typografie. Recherche ergab scheinbar einen kostenlosen Tier für "Nano Banana" (`gemini-2.5-flash-image`, 500 Bilder/Tag gratis) — auf dieser Basis mit Zustimmung des Nutzers implementiert: Bild-Prompt pro Folie im Gliederungs-Schema, `generate_slide_image()` im Gemini-Client, parallele Generierung mit `ThreadPoolExecutor` (max. 4 gleichzeitig) im Presentations-Router, Fehlerabsicherung pro Folie (ein fehlgeschlagenes Bild darf nicht die ganze Präsentation verhindern), neues Bild+Text-Split-Layout in `presentation.py`.
+- **Live-Test deckte auf, dass die Recherche falsch bzw. veraltet war:** Beim echten Testlauf lieferte die Gemini-API `429 RESOURCE_EXHAUSTED`, `limit: 0` für `gemini-2.5-flash-preview-image` im Free Tier — auf dem tatsächlichen API-Key-Zugang existiert für Bildgenerierung aktuell kein kostenloses Kontingent (weitere Recherche bestätigte: die 500-Bilder-Angabe bezog sich offenbar nur auf die AI-Studio-Oberfläche, nicht auf den programmatischen API-Zugriff, oder war schlicht veraltet). Nutzer explizit auf diesen Irrtum hingewiesen.
+- **Positiv:** Die eingebaute Fehlerabsicherung griff korrekt — trotz fehlgeschlagener Bildgenerierung wurde die Präsentation trotzdem vollständig erstellt (nur ohne Bilder), kein Absturz.
+- **Nutzer-Entscheidung:** Da Bildgenerierung auf diesem Account echtes Geld kosten würde (~0,02-0,13$/Bild) und das ursprüngliche Projektziel "läuft kostenlos" war, wurde das Feature auf Wunsch des Nutzers **vollständig wieder entfernt** (nicht nur deaktiviert) statt als totes/kostenpflichtiges Feature im Code zu belassen: `generate_slide_image()`, `_generate_images()`, `image_prompt`-Schema-Feld, Bild-Layout in `presentation.py`, `include_images`-Option in Schema/API/Frontend, `gemini_image_model`-Setting — alles rückgebaut. Tests entsprechend bereinigt.
+
+**Probleme / Debugging:**
+- Beim ersten Download-Test in derselben Browser-Session wurde die neue Datei vom Browser automatisch als `praesentation (1).pptx` gespeichert (da `praesentation.pptx` vom vorherigen Testlauf schon existierte) — meine erste Inhaltsprüfung lief versehentlich gegen die alte Datei und zeigte einen irreführenden `_NoFill`-Fehler beim Auslesen der Hintergrundfarbe. Nach Prüfung des tatsächlichen `ls`-Outputs (zwei Dateien, unterschiedliches Datum) auf die richtige Datei zugegriffen — kein echter Bug im Code.
+- `python-pptx`-Typing: `Presentation` ist eine Fabrikfunktion, kein Typ — `prs: Presentation` als Parameter-Annotation schlug in `mypy` fehl (`is not valid as a type`). Behoben durch `Any` als Parametertyp für die internen Hilfsfunktionen.
+
+**Ergebnis:** Präsentationen haben jetzt ein durchgängiges, zur Design-Beschreibung passendes Farbschema, passende Schriftart, 16:9-Format und einen Akzent-Balken — deutlich weniger "lieblos" als der reine Standard-Look vorher, ganz ohne laufende Kosten.
+
+**Nächster Schritt:** Wie zuvor — Deployment (Render, dann Cloudflare Pages).
