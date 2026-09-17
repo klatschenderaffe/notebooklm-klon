@@ -60,6 +60,46 @@ def test_upload_source_file_sets_explicit_markdown_content_type(
     assert file_options == {"content-type": "text/markdown"}
 
 
+def test_upload_source_file_sets_content_type_for_url_and_youtube(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bucket = _FakeBucket()
+    monkeypatch.setattr(storage_module, "get_client", lambda: _FakeClient(bucket))
+
+    storage_module.upload_source_file(
+        "user-1", "notebook-1", "source-3", "Artikel.md", b"Text", "url"
+    )
+    storage_module.upload_source_file(
+        "user-1", "notebook-1", "source-4", "Video.md", b"Text", "youtube"
+    )
+
+    assert bucket.upload_calls[0][2] == {"content-type": "text/markdown"}
+    assert bucket.upload_calls[1][2] == {"content-type": "text/markdown"}
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected_mime"),
+    [
+        ("ton.mp3", "audio/mpeg"),
+        ("ton.wav", "audio/wav"),
+        ("ton.m4a", "audio/mp4"),
+        ("ton.ogg", "audio/ogg"),
+    ],
+)
+def test_upload_source_file_derives_audio_content_type_from_extension(
+    filename: str, expected_mime: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bucket = _FakeBucket()
+    monkeypatch.setattr(storage_module, "get_client", lambda: _FakeClient(bucket))
+
+    storage_module.upload_source_file(
+        "user-1", "notebook-1", "source-5", filename, b"...", "audio"
+    )
+
+    [(_, _, file_options)] = bucket.upload_calls
+    assert file_options == {"content-type": expected_mime}
+
+
 def test_delete_source_file_removes_by_path(monkeypatch: pytest.MonkeyPatch) -> None:
     bucket = _FakeBucket()
     monkeypatch.setattr(storage_module, "get_client", lambda: _FakeClient(bucket))

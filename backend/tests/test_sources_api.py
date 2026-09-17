@@ -53,6 +53,62 @@ def test_upload_source_success(client: TestClient, monkeypatch: pytest.MonkeyPat
     assert body["file_type"] == "md"
 
 
+def test_upload_source_cleans_up_on_chunk_insert_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression test: found live when a bug in embed_texts made insert_chunks fail
+    after the storage file and source row had already been created — leaving a
+    zero-chunk "ghost" source that appeared normal in the UI but could never be found
+    by chat. _ingest_source must roll back both on any failure after the storage
+    upload.
+    """
+    monkeypatch.setattr(
+        sources_router, "embed_texts", lambda chunks, task_type: [[0.1, 0.2] for _ in chunks]
+    )
+    monkeypatch.setattr(
+        storage,
+        "upload_source_file",
+        lambda user_id, notebook_id, source_id, filename, content, file_type: (
+            f"{user_id}/{notebook_id}/{source_id}/{filename}"
+        ),
+    )
+    monkeypatch.setattr(
+        vector_store,
+        "insert_source",
+        lambda source_id, notebook_id, filename, file_type, storage_path: {
+            "id": source_id,
+            "filename": filename,
+            "file_type": file_type,
+            "created_at": "2026-09-16T00:00:00Z",
+        },
+    )
+
+    def failing_insert_chunks(source_id: str, chunks: list, embeddings: list) -> None:
+        raise ValueError("zip() argument 2 is shorter than argument 1")
+
+    monkeypatch.setattr(vector_store, "insert_chunks", failing_insert_chunks)
+
+    deleted_storage_paths = []
+    deleted_source_ids = []
+    monkeypatch.setattr(
+        storage, "delete_source_file", lambda path: deleted_storage_paths.append(path)
+    )
+    monkeypatch.setattr(
+        vector_store,
+        "delete_source",
+        lambda notebook_id, source_id: deleted_source_ids.append(source_id),
+    )
+
+    response = client.post(
+        BASE,
+        files={"file": ("notiz.md", io.BytesIO(b"# Titel\n\nInhalt"), "text/markdown")},
+    )
+
+    assert response.status_code == 500
+    assert len(deleted_storage_paths) == 1
+    assert len(deleted_source_ids) == 1
+
+
 def test_upload_source_rejects_empty_text(client: TestClient) -> None:
     response = client.post(
         BASE,
@@ -99,3 +155,114 @@ def test_sources_require_authentication() -> None:
     unauthenticated_client = TestClient(app)
     response = unauthenticated_client.get(BASE)
     assert response.status_code == 401
+
+
+def _stub_ingest(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sources_router, "embed_texts", lambda chunks, task_type: [[0.1, 0.2] for _ in chunks]
+    )
+    monkeypatch.setattr(
+        storage,
+        "upload_source_file",
+        lambda user_id, notebook_id, source_id, filename, content, file_type: (
+            f"{user_id}/{notebook_id}/{source_id}/{filename}"
+        ),
+    )
+    monkeypatch.setattr(
+        vector_store,
+        "insert_source",
+        lambda source_id, notebook_id, filename, file_type, storage_path: {
+            "id": source_id,
+            "filename": filename,
+            "file_type": file_type,
+            "created_at": "2026-09-16T00:00:00Z",
+        },
+    )
+    monkeypatch.setattr(vector_store, "insert_chunks", lambda source_id, chunks, embeddings: None)
+
+
+def test_add_url_source_success(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_ingest(monkeypatch)
+    monkeypatch.setattr(
+        sources_router,
+        "extract_url_content",
+        lambda url: ("Artikeltitel", "Der extrahierte Haupttext."),
+    )
+
+    response = client.post(f"{BASE}/url", json={"url": "https://example.org/artikel"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["filename"] == "Artikeltitel"
+    assert body["file_type"] == "url"
+
+
+def test_add_url_source_extraction_failure_returns_422(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.web_extraction import UrlExtractionError
+
+    def raise_error(url: str) -> tuple[str, str]:
+        raise UrlExtractionError("Seite nicht erreichbar")
+
+    monkeypatch.setattr(sources_router, "extract_url_content", raise_error)
+
+    response = client.post(f"{BASE}/url", json={"url": "https://does-not-exist.invalid"})
+
+    assert response.status_code == 422
+
+
+def test_add_youtube_source_success(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_ingest(monkeypatch)
+    monkeypatch.setattr(
+        sources_router,
+        "extract_youtube_transcript",
+        lambda url: ("YouTube-Video abc123", "Transkribierter Text."),
+    )
+
+    response = client.post(
+        f"{BASE}/youtube", json={"url": "https://www.youtube.com/watch?v=abc123"}
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["filename"] == "YouTube-Video abc123"
+    assert body["file_type"] == "youtube"
+
+
+def test_add_youtube_source_extraction_failure_returns_422(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.youtube_extraction import YoutubeExtractionError
+
+    def raise_error(url: str) -> tuple[str, str]:
+        raise YoutubeExtractionError("Kein Transkript verfügbar")
+
+    monkeypatch.setattr(sources_router, "extract_youtube_transcript", raise_error)
+
+    response = client.post(f"{BASE}/youtube", json={"url": "https://www.youtube.com/watch?v=x"})
+
+    assert response.status_code == 422
+
+
+def test_upload_audio_source_transcribes_via_gemini(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_ingest(monkeypatch)
+    received_mime_types = []
+
+    def fake_transcribe(audio_bytes: bytes, mime_type: str) -> str:
+        received_mime_types.append(mime_type)
+        return "Transkribierter gesprochener Text."
+
+    monkeypatch.setattr(sources_router, "transcribe_audio", fake_transcribe)
+
+    response = client.post(
+        BASE,
+        files={"file": ("aufnahme.wav", io.BytesIO(b"RIFF...fake-wav-bytes"), "audio/wav")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["file_type"] == "audio"
+    assert received_mime_types == ["audio/wav"]

@@ -1,9 +1,14 @@
 from app.config import settings
 from app.services.supabase_client import get_client
+from app.services.text_extraction import audio_mime_type_from_filename
 
 CONTENT_TYPES = {
     "pdf": "application/pdf",
     "md": "text/markdown",
+    # URL/YouTube-Quellen werden als extrahierter Text abgelegt, konsistent mit
+    # Markdown-Quellen. Audio behält sein Original-Format (siehe unten).
+    "url": "text/markdown",
+    "youtube": "text/markdown",
 }
 
 
@@ -11,7 +16,11 @@ def upload_source_file(
     user_id: str, notebook_id: str, source_id: str, filename: str, content: bytes, file_type: str
 ) -> str:
     storage_path = f"{user_id}/{notebook_id}/{source_id}/{filename}"
-    content_type = CONTENT_TYPES[file_type]
+    content_type = (
+        audio_mime_type_from_filename(filename)
+        if file_type == "audio"
+        else CONTENT_TYPES[file_type]
+    )
     get_client().storage.from_(settings.supabase_storage_bucket).upload(
         storage_path, content, file_options={"content-type": content_type}
     )

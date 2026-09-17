@@ -28,15 +28,38 @@ def get_client() -> genai.Client:
 def embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
     if not texts:
         return []
+    # WICHTIG: contents=[str, str, ...] als flache Liste wird von der API als EIN
+    # Multi-Part-Dokument interpretiert und liefert dadurch nur ein einziges Embedding
+    # zurück, unabhängig von der Anzahl der Texte — live verifiziert (68 Strings rein,
+    # 1 Embedding raus). Bei genau einem Chunk pro Quelle (der bisherige Testfall) fiel
+    # das nicht auf, da "1 raus" dort zufällig korrekt aussah. Jeder Text muss stattdessen
+    # als eigenständiges types.Content-Objekt übergeben werden, damit die API sie als N
+    # unabhängige Dokumente batcht und N Embeddings zurückgibt (live mit 68 Chunks
+    # verifiziert: 68 rein, 68 raus).
+    contents = [types.Content(parts=[types.Part(text=t)]) for t in texts]
     response = get_client().models.embed_content(
         model=settings.gemini_embedding_model,
-        contents=cast(Any, texts),
+        contents=cast(Any, contents),
         config=types.EmbedContentConfig(
             output_dimensionality=settings.gemini_embedding_dimensions,
             task_type=task_type,
         ),
     )
     return [list(embedding.values or []) for embedding in response.embeddings or []]
+
+
+def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
+    response = get_client().models.generate_content(
+        model=settings.gemini_chat_model,
+        contents=cast(
+            Any,
+            [
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                "Transkribiere den gesprochenen Inhalt dieser Audiodatei vollständig und wörtlich.",
+            ],
+        ),
+    )
+    return response.text or ""
 
 
 def generate_answer(question: str, context_chunks: list[str]) -> str:

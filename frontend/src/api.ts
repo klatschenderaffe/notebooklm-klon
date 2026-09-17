@@ -11,7 +11,7 @@ export interface Notebook {
 export interface Source {
   id: string
   filename: string
-  file_type: 'pdf' | 'md'
+  file_type: 'pdf' | 'md' | 'url' | 'youtube' | 'audio'
   created_at: string
 }
 
@@ -119,6 +119,26 @@ export async function deleteSource(notebookId: string, id: string): Promise<void
     headers: await authHeader(),
   })
   if (!response.ok) throw new Error(await parseErrorMessage(response))
+}
+
+export async function addUrlSource(notebookId: string, url: string): Promise<Source> {
+  const response = await fetch(`${API_URL}/notebooks/${notebookId}/sources/url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+    body: JSON.stringify({ url }),
+  })
+  if (!response.ok) throw new Error(await parseErrorMessage(response))
+  return response.json()
+}
+
+export async function addYoutubeSource(notebookId: string, url: string): Promise<Source> {
+  const response = await fetch(`${API_URL}/notebooks/${notebookId}/sources/youtube`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+    body: JSON.stringify({ url }),
+  })
+  if (!response.ok) throw new Error(await parseErrorMessage(response))
+  return response.json()
 }
 
 // --- Chat ---
