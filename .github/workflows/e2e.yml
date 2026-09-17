@@ -1,0 +1,72 @@
+name: E2E Tests
+
+# Bewusst NICHT bei jedem Push/PR -- die Smoke-Tests starten den echten Frontend-Dev-Server
+# und würden bei Erweiterung um echte Login-Flows Gemini-/Supabase-Kontingent verbrauchen.
+# Stattdessen: manuell auslösbar + wöchentlich als Regressions-Check.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1" # jeden Montag 04:00 UTC
+
+jobs:
+  e2e:
+    name: Playwright Smoke Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend-Dependencies installieren
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend-Dev-Server starten
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ secrets.E2E_VITE_API_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.E2E_VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.E2E_VITE_SUPABASE_ANON_KEY }}
+        run: nohup npm run dev -- --port 5173 > /tmp/vite-dev.log 2>&1 &
+
+      - name: Warten bis der Dev-Server erreichbar ist
+        run: |
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://localhost:5173; then
+              echo "Dev-Server ist erreichbar."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Dev-Server nach 60s nicht erreichbar." >&2
+          cat /tmp/vite-dev.log || true
+          exit 1
+
+      - name: E2E-Dependencies installieren
+        working-directory: e2e
+        run: npm ci
+
+      - name: Playwright-Browser installieren
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright-Tests ausführen
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://localhost:5173
+        run: npm test
+
+      - name: Vite-Dev-Server-Log bei Fehlschlag ausgeben
+        if: failure()
+        run: cat /tmp/vite-dev.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7

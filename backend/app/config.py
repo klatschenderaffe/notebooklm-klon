@@ -30,5 +30,11 @@ class Settings(BaseSettings):
     # relevanter Chunk lag bei ~0.81, ein komplett themenfremder bei ~0.53.
     chat_similarity_threshold: float = 0.6
 
+    # Sentry Error-Tracking (Phase 5, DevOps-Hardening). Bei leerem DSN (Standard, z.B.
+    # lokale Entwicklung ohne Sentry-Account) wird Sentry gar nicht erst initialisiert —
+    # siehe app/main.py.
+    sentry_dsn: str = ""
+    environment: str = "development"
+
 
 settings = Settings()

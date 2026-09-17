@@ -459,3 +459,30 @@ Nutzer hat mit "Ja, mach weiter mit Phase 4" freigegeben. Ziel (wie im Ausbaupla
 **Ergebnis:** Notizen-Feature vollständig end-to-end verifiziert (Erstellen, Anzeigen, Persistenz über Reload, Löschen, Isolation zwischen Quellen). Backend: 93 Tests grün, `ruff`/`mypy` sauber. Frontend: `oxlint` sauber, Produktions-Build erfolgreich.
 
 **Nächster Schritt:** Freigabe des Nutzers für Phase 4 einholen, dann Phase 5 — DevOps-Ausbau.
+
+---
+
+## 2026-09-17 — Phase 5 (Teil 1): Sentry-SDK-Integration, E2E-Gerüst, Branch-Strategie — erster Durchlauf mit festem Subagent-Workflow
+
+Session-Neustart, damit die vom Nutzer in `.claude/agents/` abgelegten Subagenten (`full-stack-developer`, `python-pro`, `code-reviewer` → intern `code-reviewer-pro`, `incident-responder`, `debugger`) als `subagent_type` verfügbar sind. Verifiziert: Agenten ließen sich nach dem Neustart problemlos aufrufen — der vorherige `Agent type 'full-stack-developer' not found`-Fehler trat nicht mehr auf. Ab jetzt gilt für dieses Projekt der feste Workflow **schreiben (`full-stack-developer`/`python-pro`, parallel in überschneidungsfreien Dateibereichen) → reviewen (`code-reviewer-pro`, `incident-responder`, parallel) → Bugs beheben (`debugger`)**, koordiniert vom Hauptagenten.
+
+Umfang dieser Runde (mit dem Nutzer vorab abgestimmt): nur was **ohne neue Accounts** geht. Explizit nicht: echte Staging-Infra, echter Sentry-Account, GitHub-Actions-Secrets für E2E — diese Account-Schritte kommen später gemeinsam mit dem Nutzer.
+
+**Gebaut:**
+- **Backend-Sentry** (`python-pro`): `sentry_dsn`/`environment`-Settings in `app/config.py`, Init in `app/main.py` hart gated hinter leerem DSN (No-Op ohne Account), `sentry-sdk[fastapi]==2.69.2` exact-pinned, `.env.example` ergänzt, neuer Test `test_sentry_init.py`.
+- **Frontend-Sentry** (`full-stack-developer`): `@sentry/react`, Init in `src/main.tsx` gated hinter `VITE_SENTRY_DSN`, kein Performance-Tracing.
+- **E2E-Gerüst** (`full-stack-developer`): neues Top-Level-Verzeichnis `e2e/` (Playwright), 4 Smoke-Tests gegen `ProtectedRoute`/`AuthContext`-Verhalten (Login-/Signup-Formularfelder, Redirect zu `/login` bei fehlender Auth) — **tatsächlich lokal gegen einen selbst gestarteten Dev-Server ausgeführt und grün verifiziert**, nicht nur geschrieben.
+- **CI-Workflow** `.github/workflows/e2e.yml`: nur `workflow_dispatch` + wöchentlicher `schedule`, bewusst nicht bei jedem Push (Gemini-Kontingent schonen).
+- **README:** neuer Abschnitt „Branch-Strategie" (`main` = Produktion, `develop` = künftige Staging-Integrationsbranch).
+
+**Review-Funde und Fixes (der eigentliche Wert des neuen Workflows):**
+1. **`incident-responder` fand reproduziert (nicht nur vermutet), dass ein ungültiger `SENTRY_DSN` das gesamte Backend am Start hindern würde:** `_init_sentry()` lief als bare Top-Level-Call vor `app = FastAPI(...)` ohne try/except; `sentry_sdk.init(dsn='not-a-valid-dsn', ...)` wirft nachweislich `BadDsn`. Ein einzelner Tippfehler in einer künftigen Render-Env-Var hätte den kompletten Service lahmgelegt — genau die Art Fehler, vor der ein Observability-Feature schützen soll, nicht verursachen. **Von `debugger` behoben:** `sentry_sdk.init(...)` in try/except gewrappt, Fehlerfall wird nur geloggt, Service startet trotzdem.
+2. **`incident-responder` fand außerdem, dass Sentry die eigenen Fehler strukturell nie gesehen hätte:** `CatchAllExceptionsMiddleware` schluckt Exceptions und gibt eine saubere 500-Response zurück, ohne `sentry_sdk.capture_exception()` aufzurufen — und Sentrys ASGI-Hook sitzt (per Quellcode-Inspektion von `sentry_sdk/integrations/starlette.py` bestätigt) außerhalb der über `add_middleware` registrierten Middlewares. Ohne Fix wäre das Monitoring nach echtem Account-Setup vollständig blind für genau die Fehler geblieben, die die Middleware normalisiert. **Von `debugger` behoben:** `capture_exception()` im except-Block ergänzt, zwei neue Regressionstests (`test_init_sentry_invalid_dsn_does_not_raise`, `test_unhandled_exception_reports_to_sentry`).
+3. **`code-reviewer-pro` fand eine kleinere Race-Condition-Möglichkeit** im E2E-Health-Check (reiner `curl`-Verbindungstest statt Prüfung auf tatsächliche HTML-Antwort) sowie einige unkritische Verbesserungsvorschläge (Node-Version, Test-Robustheit) — als Follow-up vermerkt, nicht blockierend.
+4. **Eigener Fund beim Gegenlesen:** eine bereits vor dieser Session bestehende, uncommittete `.gitignore`-Änderung (`.claude/settings.local.json` → `.claude/*`) hätte die neu erstellten Subagent-Definitionen dauerhaft von Git ausgeschlossen — obwohl der Subagent-Workflow laut Nutzerentscheidung dauerhaft genutzt werden soll. Mit dem Nutzer per Rückfrage geklärt: Agenten sollen eingecheckt werden, `.gitignore` entsprechend auf `.claude/settings.local.json` zurückgesetzt.
+
+**Finale Checks (alle grün):** Backend `ruff check .` / `mypy app` / `pytest -q` → **97 Tests**. Frontend `npm run lint` (oxlint) / `npm run build` → sauber.
+
+**Ergebnis:** Sentry-Integration (Backend + Frontend) und E2E-Gerüst stehen, beide No-Op ohne echte Accounts. Zwei reale, vom Review-Workflow gefundene Bugs behoben, bevor sie in Produktion hätten auffallen können — erster praktischer Beleg, dass sich der neue Subagent-Workflow lohnt. `develop`-Branch als Nächstes lokal anlegen (kein Push ohne Rückfrage).
+
+**Nächster Schritt:** `develop`-Branch anlegen, committen (Push nur nach Rückfrage), TODO.md aktualisieren. Danach als eigener, gemeinsamer Schritt mit dem Nutzer: echte Staging-Infra (2. Supabase-Projekt, 2. Render-Service, Cloudflare-Previews), echter Sentry-Account, GitHub-Secrets für E2E.

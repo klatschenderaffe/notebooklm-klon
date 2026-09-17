@@ -1,5 +1,6 @@
 import logging
 
+import sentry_sdk
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -38,8 +39,50 @@ class CatchAllExceptionsMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         except Exception:
             logger.exception("Unbehandelter Fehler bei %s %s", request.method, request.url.path)
+            # Sentrys ASGI-Hook liegt außerhalb der per app.add_middleware() registrierten
+            # Middlewares (siehe sentry_sdk/integrations/starlette.py, patch_asgi_app) und
+            # bekommt Exceptions deshalb nie zu sehen, die hier abgefangen und nicht erneut
+            # geworfen werden. Ohne diesen expliziten Aufruf würde Sentry strukturell NIE
+            # einen der hier behandelten Fehler melden. capture_exception() ist ein No-Op,
+            # falls Sentry nicht initialisiert wurde (kein SENTRY_DSN gesetzt).
+            sentry_sdk.capture_exception()
             return JSONResponse(status_code=500, content={"detail": "Interner Serverfehler"})
 
+
+def _init_sentry() -> None:
+    """Initialisiert Sentry Error-Tracking, falls ein DSN konfiguriert ist.
+
+    Bei leerem SENTRY_DSN (Standard, z.B. lokale Entwicklung/CI ohne Sentry-Account) ist
+    dies ein reines No-Op — sentry_sdk.init wird dann NICHT aufgerufen. Nur
+    Error-Tracking, kein Performance-Tracing (traces_sample_rate wird bewusst nicht
+    gesetzt, Standard dafür ist None/aus).
+
+    Diese Funktion läuft als bare Top-Level-Call beim Modul-Import, VOR `app =
+    FastAPI(...)`. sentry_sdk.init() muss deshalb gegen Exceptions abgesichert werden:
+    ein ungültiger SENTRY_DSN (z.B. Tippfehler in einer Render-Env-Var) darf niemals den
+    kompletten Import von app/main.py und damit den Backend-Start verhindern — ein
+    defektes Monitoring-Setup darf den Service nicht lahmlegen. Im Fehlerfall bleibt
+    Sentry einfach inaktiv (wie bei leerem DSN) und der Fehler wird nur geloggt.
+    """
+    if not settings.sentry_dsn:
+        return
+
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
+
+    try:
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.environment,
+            integrations=[StarletteIntegration(), FastApiIntegration()],
+        )
+    except Exception:
+        logger.warning(
+            "Sentry-Initialisierung fehlgeschlagen, Error-Tracking bleibt inaktiv", exc_info=True
+        )
+
+
+_init_sentry()
 
 app = FastAPI(title="NotebookLM-Klon API")
 

@@ -83,6 +83,12 @@ Benötigte Variablen stehen in `backend/.env.example` und `frontend/.env.example
 - **Frontend (Cloudflare Pages):** Repo im [Cloudflare-Dashboard](https://dash.cloudflare.com) unter "Workers & Pages" verbinden, Build-Verzeichnis `frontend`, Build-Command `npm run build`, Output-Verzeichnis `dist` (siehe `frontend/wrangler.toml`). Danach automatisches Deployment bei jedem Push auf `main`.
 - **Backend (Render):** Deployment über das Blueprint in `render.yaml`.
 
+## Branch-Strategie
+
+- **`main`** ist die Produktions-Branch — jeder Push löst das Deployment auf Cloudflare Pages / Render aus (siehe oben).
+- **`develop`** ist die Integrations-Branch für die künftige Staging-Umgebung (eigenes Supabase-Projekt, eigener Render-Service, Cloudflare-Preview-Deployments). Diese Staging-Infrastruktur existiert noch nicht, die Branch-Konvention steht aber schon fest.
+- Feature-Arbeit zweigt von `develop` ab und wird per Pull Request zurück nach `develop` gemerged. Erst wenn ein Stand auf Staging geprüft ist, wird `develop` nach `main` gemerged.
+
 ## Tests & Qualitätssicherung
 
 Läuft automatisch in CI bei jedem Push/PR (`.github/workflows/ci.yml`):
