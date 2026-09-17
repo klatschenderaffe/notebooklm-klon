@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { generatePresentation } from '../api'
 
 interface PresentationPanelProps {
+  notebookId: string
   hasSources: boolean
   selectedSourceIds: string[]
 }
@@ -36,7 +37,7 @@ const TONE_OPTIONS = [
   { label: 'Einfach erklärt', value: 'Einfach erklärt, für Laien verständlich' },
 ]
 
-function PresentationPanel({ hasSources, selectedSourceIds }: PresentationPanelProps) {
+function PresentationPanel({ notebookId, hasSources, selectedSourceIds }: PresentationPanelProps) {
   const [topic, setTopic] = useState('')
   const [designDescription, setDesignDescription] = useState('')
   const [tone, setTone] = useState('')
@@ -56,7 +57,7 @@ function PresentationPanel({ hasSources, selectedSourceIds }: PresentationPanelP
     setReadyToOpenInDrive(false)
     setIsGenerating(true)
     try {
-      const blob = await generatePresentation({
+      const blob = await generatePresentation(notebookId, {
         topic: trimmed,
         sourceIds: selectedSourceIds,
         designDescription: designDescription.trim(),

@@ -2,17 +2,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.routers.chat as chat_router
-from app.main import app
-
-client = TestClient(app)
+from tests.conftest import TEST_NOTEBOOK_ID
 
 
-def test_chat_returns_answer_with_citations(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chat_returns_answer_with_citations(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(chat_router, "embed_texts", lambda texts, task_type: [[0.1, 0.2]])
     monkeypatch.setattr(
         chat_router.vector_store,
         "similarity_search",
-        lambda query_embedding, match_count=6: [
+        lambda notebook_id, query_embedding, match_count=6: [
             {
                 "filename": "notiz.md",
                 "content": "Relevanter Inhalt",
@@ -26,7 +26,9 @@ def test_chat_returns_answer_with_citations(monkeypatch: pytest.MonkeyPatch) -> 
         chat_router, "generate_answer", lambda question, context_chunks: "Die Antwort."
     )
 
-    response = client.post("/chat", json={"question": "Was steht in der Datei?"})
+    response = client.post(
+        f"/notebooks/{TEST_NOTEBOOK_ID}/chat", json={"question": "Was steht in der Datei?"}
+    )
 
     assert response.status_code == 200
     body = response.json()

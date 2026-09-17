@@ -9,10 +9,11 @@ interface Message {
 }
 
 interface ChatPanelProps {
+  notebookId: string
   hasSources: boolean
 }
 
-function ChatPanel({ hasSources }: ChatPanelProps) {
+function ChatPanel({ notebookId, hasSources }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [question, setQuestion] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -27,7 +28,7 @@ function ChatPanel({ hasSources }: ChatPanelProps) {
     setIsLoading(true)
 
     try {
-      const response = await sendChatMessage(trimmed)
+      const response = await sendChatMessage(notebookId, trimmed)
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', text: response.answer, citations: response.citations },

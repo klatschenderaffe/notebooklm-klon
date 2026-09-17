@@ -3,6 +3,7 @@ import type { Source } from '../api'
 import { deleteSource, uploadSource } from '../api'
 
 interface SourcesPanelProps {
+  notebookId: string
   sources: Source[]
   selectedSourceIds: Set<string>
   onToggleSource: (id: string) => void
@@ -10,6 +11,7 @@ interface SourcesPanelProps {
 }
 
 function SourcesPanel({
+  notebookId,
   sources,
   selectedSourceIds,
   onToggleSource,
@@ -26,7 +28,7 @@ function SourcesPanel({
     setError(null)
     setIsUploading(true)
     try {
-      await uploadSource(file)
+      await uploadSource(notebookId, file)
       onSourcesChange()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload fehlgeschlagen')
@@ -38,7 +40,7 @@ function SourcesPanel({
 
   async function handleDelete(id: string) {
     try {
-      await deleteSource(id)
+      await deleteSource(notebookId, id)
       onSourcesChange()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Löschen fehlgeschlagen')

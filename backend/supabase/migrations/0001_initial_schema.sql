@@ -1,6 +1,6 @@
--- NotebookLM-Klon: Supabase-Schema
--- Anwenden im Supabase SQL Editor des Projekts (siehe README "Supabase Setup").
--- Single-User-Anwendung: keine Row-Level-Security / Nutzer-Trennung nötig.
+-- Migration 0001: Initiales Schema (Stand: Single-User-Version)
+-- Anwenden im Supabase SQL Editor, der Reihe nach (0001, 0002, ...).
+-- Diese Migration allein ergibt ein Single-User-Schema; ab 0002 kommt Multi-User dazu.
 
 create extension if not exists vector;
 

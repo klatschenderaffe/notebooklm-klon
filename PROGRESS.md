@@ -314,3 +314,51 @@ Nutzer war mit der Optik der generierten Präsentationen unzufrieden ("sieht lie
 **Ergebnis:** Präsentationen haben jetzt ein durchgängiges, zur Design-Beschreibung passendes Farbschema, passende Schriftart, 16:9-Format und einen Akzent-Balken — deutlich weniger "lieblos" als der reine Standard-Look vorher, ganz ohne laufende Kosten.
 
 **Nächster Schritt:** Wie zuvor — Deployment (Render, dann Cloudflare Pages).
+
+---
+
+## 2026-09-16 — Großer Ausbau beschlossen: Multi-User, mehr Kernfunktionen, größerer DevOps-Umfang
+
+Nutzer war mit dem Umfang des Projekts nicht zufrieden und wollte ein "größeres Projekt", statt jetzt zu deployen. Nach Rückfrage (AskUserQuestion) gewünschter Umfang: mehrere Notebooks, weitere Quellentypen (URL/YouTube/Audio), Notizen pro Quelle, echte Nutzerverwaltung (Supabase Auth), zusätzliche Seiten (Notebook-Übersicht, Verlauf, Dashboard), größerer DevOps-Ausbau (Staging, E2E-Tests, Error-Monitoring, versionierte Migrationen) — alles nur soweit kostenlos umsetzbar.
+
+**Vorgehen:** Wechsel in den Plan-Modus, gemeinsam mit dem Nutzer einen Phasenplan (0-5) erarbeitet und per `ExitPlanMode` freigegeben. Vorgehen: Phase für Phase mit Freigabe nach jeder Phase; voller Plan liegt zusätzlich unter `~/.claude/plans/nested-dreaming-raven.md`; laufender Status/Phasenliste wird in der lokalen `TODO.md` gepflegt (nicht im Repo, wie bereits etabliert).
+
+**Deployment (Render/Cloudflare) zurückgestellt:** Ergibt mehr Sinn, zuerst die Multi-User-Grundlage (Phase 1) zu bauen, statt jetzt die bald überholte Single-User-Version live zu schalten.
+
+### Phase 0 — Kostenlos-Machbarkeit von Audio verifiziert ✅
+
+Nach dem Bild-Generierungs-Vorfall (Recherche sagte "kostenlos", Live-Test zeigte `limit: 0`) diesmal von Anfang an mit einem echten API-Call statt nur Recherche geprüft, bevor Audio als Quellentyp gebaut wird:
+
+- **Audio-Input beim Chat-Modell (`gemini-3.6-flash`):** Live mit einer WAV-Testdatei geprüft — ✅ Erfolgreich, kostenlos (kein Quota-Fehler), Transkription korrekt. Da reale Nutzer-Uploads (mp3/wav/m4a) gültige Container-Header haben, ist das der relevante Pfad für Phase 3.
+
+**Ergebnis:** Anders als bei der Bildgenerierung — hier hält sich die Erwartung zum kostenlosen Zugang. Phase 3 (Audio-Datei als Quellentyp) wird wie geplant umgesetzt.
+
+**Nächster Schritt:** Phase 1 — Supabase Auth + Multi-Notebook-Datenmodell + versionierte Migrationen + Frontend-Routing.
+
+---
+
+## 2026-09-16/17 — Phase 1 abgeschlossen: Supabase Auth + Multi-Notebook + versionierte Migrationen
+
+**Getan:**
+- Bereits vorhandene Test-Quellen (CV.pdf, Lebenslauf) vor dem Schema-Umbau auf Nutzerwunsch gelöscht (DB-Einträge per API, verwaiste Storage-Objekte manuell per Python-Skript bereinigt, da `DELETE /sources/{id}` sie zu diesem Zeitpunkt noch nicht aus dem Storage entfernte — siehe unten).
+- **DB-Schema umgebaut auf versionierte Migrationen:** `backend/supabase/schema.sql` zu `backend/supabase/migrations/0001_initial_schema.sql` verschoben (per `git mv`), neue `0002_multi_user_notebooks.sql`: Tabelle `notebooks` (user_id → `auth.users`), Pflichtspalte `sources.notebook_id`, RLS-Policies auf allen drei Tabellen als Tiefenverteidigung (Backend nutzt weiterhin `service_role`, umgeht RLS technisch, filtert aber zusätzlich explizit nach `notebook_id`/`user_id` in jeder Query — RLS ist zusätzliche Absicherung, kein alleiniger Schutz), `match_chunks`-RPC um `target_notebook_id`-Filter erweitert (sonst hätte die Ähnlichkeitssuche versehentlich quer über alle Notebooks/Nutzer gesucht). Vom Nutzer im SQL Editor ausgeführt.
+- **Backend:** `pyjwt` als neue Dependency. `app/auth.py`: `get_current_user_id()` als FastAPI-Dependency, verifiziert Supabase-JWTs — verzweigt zur Laufzeit zwischen legacy HS256 (`SUPABASE_JWT_SECRET`) und neueren asymmetrischen Signing Keys (JWKS-Endpunkt), da beide Verfahren je nach Projekt-Konfiguration vorkommen können und der Algorithmus im Token-Header selbst steht. Neuer `app/services/notebooks_store.py` (CRUD + `require_owned_notebook_id`-Dependency, die Auth + Eigentümerschaft in einem Schritt prüft) und `app/routers/notebooks.py`. Bestehende Router (`sources.py`, `chat.py`, `presentations.py`) auf `/notebooks/{notebook_id}/...`-Pfade umgestellt, jeder Endpunkt jetzt notebook-scoped und auth-geschützt. `vector_store.py` und `storage.py` entsprechend um `notebook_id`/`user_id` erweitert; Storage-Pfadschema neu `{user_id}/{notebook_id}/{source_id}/{filename}`.
+- **Nebenbei behoben (aus der TODO-Liste vorgezogen):** `DELETE /sources/{id}` löscht jetzt auch die Datei aus dem Supabase-Storage-Bucket (`storage.delete_source_file()`), nicht mehr nur aus der DB — vorher blieben gelöschte Dateien im Bucket verwaist liegen. Ebenso räumt `DELETE /notebooks/{id}` jetzt alle zugehörigen Storage-Dateien mit auf, bevor das Notebook (und per Cascade seine Quellen/Chunks) gelöscht wird.
+- **Backend-Tests umgebaut:** neue `tests/conftest.py` mit `client`-Fixture (FastAPI `dependency_overrides` für Auth statt Monkeypatching, da es eine echte Dependency ist) und gemockter Notebook-Eigentümerschaft. Alle bestehenden Tests an die neuen notebook-scoped Pfade angepasst, neue Tests für `notebooks`-Router, `auth.py` (u.a. HS256-Token-Verifikation, falsches Secret, falsche Audience) und die Storage-Löschung. 39 Tests grün, `ruff`/`mypy` sauber.
+- **Frontend:** `@supabase/supabase-js` + `react-router-dom` installiert. Neuer `src/lib/supabaseClient.ts`, `AuthContext`/`useAuth` (Context-Value in eigene Datei ausgelagert, um eine `oxlint`-Fast-Refresh-Warnung sauber zu beheben, statt sie zu ignorieren). Neue Seiten: `LoginPage`, `SignupPage`, `DashboardPage`, `NotebooksListPage` (Notebook-Übersicht mit Erstellen/Umbenennen/Löschen), `NotebookPage` (bisheriges 3-Panel-UI, jetzt pro Notebook). `ProtectedRoute` leitet nicht eingeloggte Nutzer zu `/login`. `api.ts` komplett umgebaut: jeder Request hängt automatisch `Authorization: Bearer <token>` an, alle URLs notebook-scoped. Akzentfarbe/Design-System unverändert übernommen (mobile-first, wie in den Memories festgehalten).
+- Frontend-`.env.local` um `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` ergänzt (Anon-Key bewusst öffentlich/im Frontend, anders als der Service-Key im Backend).
+
+**Live-Verifikation (vollständiger End-to-End-Test mit zwei echten Test-Accounts):**
+1. **User A** registriert (`notebooklmklon-usera@mailinator.com`, echter, öffentlich einsehbarer Wegwerf-Posteingang für den Bestätigungslink) → E-Mail bestätigt → eingeloggt → Notebook "Notebook A - Katzen" erstellt → Markdown-Datei hochgeladen → Chat-Frage gestellt, korrekt beantwortet mit Zitat. Kompletter Auth+Daten-Kreislauf funktioniert.
+2. Logout getestet — funktioniert, zurück zu `/login`.
+3. **User B** registriert und eingeloggt (separater Account).
+4. **Isolationstest bestanden:** User B sieht in der Notebook-Übersicht korrekt eine **leere Liste** (nicht Notebook A). Direkter URL-Zugriff auf User As Notebook-ID (`/notebooks/{id-von-A}`) liefert korrekt **"Notebook nicht gefunden"** (404) — keine Quellen, kein Chatverlauf von User A sichtbar. Row-Level-Isolation funktioniert wie geplant.
+
+**Probleme / Debugging:**
+1. **`example.com` als Signup-E-Mail abgelehnt:** Supabase erkennt offensichtlich unechte Domains und blockt sie (`Email address "...@example.com" is invalid`). Gelöst durch Umstieg auf einen echten, öffentlich einsehbaren Wegwerf-Mailanbieter (mailinator.com), um Bestätigungslinks ohne Zugriff auf ein echtes Postfach abrufen zu können.
+2. **Bestätigungslink zweimal über das `find`-Tool abgerufen kam abgeschnitten zurück** (fehlende `type=signup&redirect_to=...`-Parameter bzw. gekürzter Token) — führte zu einer fehlgeschlagenen Verifikation (Redirect zu `/login` statt `/dashboard`, später `"Email not confirmed"` beim Login-Versuch). Kein App-Bug, sondern eine Einschränkung des Browser-Automatisierungs-Tools beim Extrahieren von Link-Text. **Gelöst:** vollständigen E-Mail-Inhalt stattdessen direkt über die öffentliche Mailinator-API (`/api/v2/domains/public/messages/{id}`) als Rohtext abgerufen, daraus den ungekürzten Token entnommen und den Bestätigungslink manuell korrekt zusammengesetzt.
+3. **Supabase E-Mail-Rate-Limit erreicht** (`email rate limit exceeded`) beim zweiten Signup-Versuch von User B — der kostenlose Supabase-Mailer hat ein niedriges Limit. Kein Fehler im eigenen Code; nach kurzer Wartezeit (Sessionsunterbrechung bis zum nächsten Tag) erneut versucht, danach erfolgreich.
+4. **Login-Formular reagierte zunächst nicht zuverlässig auf schnell aufeinanderfolgende `click`+`type`-Aktionen** des Automatisierungstools (Passwortfeld blieb leer, `"Fülle dieses Feld aus"`-Validierungshinweis erschien trotz sichtbar getippten Zeichen in einem Zwischenschritt). Kein Bug im eigentlichen Code — durch Trennen von Klick und Eingabe in getrennte Tool-Aufrufe mit kurzer Wartezeit dazwischen zuverlässig reproduzierbar gelöst.
+5. Ein Klick auf einen Mailinator-Link löste kurzzeitig einen `chrome-extension://`-Zugriffsfehler im Browser-Automatisierungstool aus (Cross-Extension-Zugriff blockiert) — behoben durch erneute Navigation zur normalen URL statt Klick auf das Link-Element.
+
+**Nächster Schritt:** Freigabe des Nutzers für Phase 1 einholen (Test war erfolgreich, aber Bestätigung steht noch aus), dann Phase 2 — Verlauf (History) für Chats und Präsentationen.

@@ -2,9 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.routers.presentations as presentations_router
-from app.main import app
+from tests.conftest import TEST_NOTEBOOK_ID
 
-client = TestClient(app)
+BASE = f"/notebooks/{TEST_NOTEBOOK_ID}/presentations"
 
 
 def _fake_outline(
@@ -27,15 +27,15 @@ def _fake_outline(
     }
 
 
-def test_create_presentation_success(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_presentation_success(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         presentations_router.vector_store,
         "chunks_for_sources",
-        lambda source_ids: [{"content": "Inhalt", "source_id": "1"}],
+        lambda notebook_id, source_ids: [{"content": "Inhalt", "source_id": "1"}],
     )
     monkeypatch.setattr(presentations_router, "generate_presentation_outline", _fake_outline)
 
-    response = client.post("/presentations", json={"topic": "Testthema"})
+    response = client.post(BASE, json={"topic": "Testthema"})
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith(
@@ -44,9 +44,11 @@ def test_create_presentation_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(response.content) > 0
 
 
-def test_create_presentation_without_sources_returns_422(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_presentation_without_sources_returns_422(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(
-        presentations_router.vector_store, "chunks_for_sources", lambda source_ids: []
+        presentations_router.vector_store, "chunks_for_sources", lambda notebook_id, source_ids: []
     )
-    response = client.post("/presentations", json={"topic": "Testthema"})
+    response = client.post(BASE, json={"topic": "Testthema"})
     assert response.status_code == 422

@@ -1,6 +1,20 @@
 from pydantic import BaseModel
 
 
+class NotebookOut(BaseModel):
+    id: str
+    name: str
+    created_at: str
+
+
+class NotebookCreate(BaseModel):
+    name: str
+
+
+class NotebookUpdate(BaseModel):
+    name: str
+
+
 class SourceOut(BaseModel):
     id: str
     filename: str

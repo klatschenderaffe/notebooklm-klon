@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_key: str = ""
     supabase_storage_bucket: str = "sources"
+    # Nur nötig, falls das Supabase-Projekt (noch) legacy HS256-JWTs signiert statt der
+    # neueren asymmetrischen Signing Keys (JWKS) — siehe app/auth.py.
+    supabase_jwt_secret: str = ""
 
     allowed_origins: str = "http://localhost:5173"
 
