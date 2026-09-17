@@ -52,6 +52,57 @@ def test_chat_returns_answer_with_citations(
     assert history_calls[1][2] == "Die Antwort."
 
 
+def test_chat_filters_out_low_similarity_matches(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression test: match_chunks returns up to match_count results regardless of
+    actual relevance. Found live when a question about dolphins still cited an
+    unrelated volcano source (similarity ~0.53) purely because the notebook had too
+    few chunks for the RPC to filter it out on its own. The chat endpoint must apply
+    its own minimum-similarity cutoff on top of whatever the RPC returns.
+    """
+    _stub_history(monkeypatch)
+    monkeypatch.setattr(chat_router, "embed_texts", lambda texts, task_type: [[0.1, 0.2]])
+    monkeypatch.setattr(
+        chat_router.vector_store,
+        "similarity_search",
+        lambda notebook_id, query_embedding, match_count=6: [
+            {
+                "filename": "delfine.pdf",
+                "content": "Relevanter Inhalt über Delfine",
+                "similarity": 0.81,
+                "id": "1",
+                "source_id": "1",
+            },
+            {
+                "filename": "vulkane.md",
+                "content": "Irrelevanter Inhalt über Vulkane",
+                "similarity": 0.53,
+                "id": "2",
+                "source_id": "2",
+            },
+        ],
+    )
+
+    received_context: list[str] = []
+
+    def fake_generate_answer(question: str, context_chunks: list[str]) -> str:
+        received_context.extend(context_chunks)
+        return "Antwort"
+
+    monkeypatch.setattr(chat_router, "generate_answer", fake_generate_answer)
+
+    response = client.post(
+        f"/notebooks/{TEST_NOTEBOOK_ID}/chat", json={"question": "Frage zu Delfinen"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["citations"]) == 1
+    assert body["citations"][0]["filename"] == "delfine.pdf"
+    assert received_context == ["Relevanter Inhalt über Delfine"]
+
+
 def test_get_chat_history(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         chat_router.history_store,

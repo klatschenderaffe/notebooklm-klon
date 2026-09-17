@@ -23,5 +23,12 @@ class Settings(BaseSettings):
     chunk_overlap_chars: int = 150
     max_upload_size_bytes: int = 20 * 1024 * 1024
 
+    # Mindest-Kosinus-Ähnlichkeit (0-1), ab der ein Chunk als relevant genug gilt, um als
+    # Chat-Kontext/Zitat verwendet zu werden. match_chunks liefert sonst immer bis zu
+    # match_count Treffer zurück, auch wenn kein einziger davon thematisch passt (z.B. bei
+    # wenigen Quellen im Notebook) — kalibriert an echten Testdaten: ein tatsächlich
+    # relevanter Chunk lag bei ~0.81, ein komplett themenfremder bei ~0.53.
+    chat_similarity_threshold: float = 0.6
+
 
 settings = Settings()

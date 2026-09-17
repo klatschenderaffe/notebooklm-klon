@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from app.config import settings
 from app.schemas import ChatCitation, ChatMessageOut, ChatRequest, ChatResponse
 from app.services import history_store, vector_store
 from app.services.gemini_client import embed_texts, generate_answer
@@ -20,7 +21,8 @@ def chat(
     history_store.insert_chat_message(notebook_id, "user", request.question, [])
 
     [query_embedding] = embed_texts([request.question], task_type="RETRIEVAL_QUERY")
-    matches = vector_store.similarity_search(notebook_id, query_embedding)
+    all_matches = vector_store.similarity_search(notebook_id, query_embedding)
+    matches = [m for m in all_matches if m["similarity"] >= settings.chat_similarity_threshold]
 
     answer = generate_answer(request.question, [match["content"] for match in matches])
     citations = [

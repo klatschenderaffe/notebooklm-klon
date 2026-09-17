@@ -381,3 +381,26 @@ Nutzer hat Phase 1 freigegeben ("Nein, du kannst weiter machen"). Direkt mit Pha
 3. Live-Verifikation vollständig durchlaufen: Chat-Frage gestellt (korrekt beantwortet, Zitat aus `vulkane.md`), Seite neu geladen → Chatverlauf korrekt aus der DB wiederhergestellt (identische Frage/Antwort/Zitat). Präsentation "Vulkane in Europa" erstellt → erscheint sofort in "Frühere Präsentationen" mit korrektem Titel/Datum → erneuter Download über den Verlauf-Button lieferte `200 OK` vom neuen `/download`-Endpoint (Datei kam korrekt aus dem `presentations`-Bucket zurück, nicht neu generiert).
 
 **Nächster Schritt:** Freigabe für Phase 2 einholen, dann Phase 3 — weitere Quellentypen (URL, YouTube, ggf. Audio).
+
+---
+
+## 2026-09-17 — Echter Bug vom Nutzer gefunden: RAG zitierte irrelevante Quellen
+
+Nutzer bat darum, den PDF-Upload-Pfad zu testen (bisher nur Markdown getestet). Test-PDF (`delfine.pdf`, per `fpdf2` temporär erzeugt) erfolgreich hochgeladen, Text-Extraktion via `pypdf` korrekt (`# Delfine ...`). Chat-Frage zum PDF-Inhalt korrekt beantwortet ("40 Jahre", "30 km/h") — **aber** der Nutzer bemerkte selbst, dass die Zitate zusätzlich die völlig themenfremde `vulkane.md`-Quelle enthielten, obwohl diese keinerlei Bezug zur Delfin-Frage hatte.
+
+**Root Cause gefunden und mit echten Werten verifiziert** (nicht nur vermutet): `match_chunks` (die Supabase-RPC für die Ähnlichkeitssuche) liefert immer bis zu `match_count` (Standard 6) Treffer zurück, unabhängig davon, wie unähnlich sie inhaltlich sind — es gibt keinerlei Mindest-Relevanz-Schwelle. Bei nur wenigen Chunks im Notebook (wie hier: nur 2) werden dadurch zwangsläufig auch komplett irrelevante Chunks "top-6", einfach weil nichts Besseres konkurriert.
+- Per direktem Test der Gemini-Embeddings kalibriert: Ähnlichkeit der Delfin-Frage zu einem tatsächlich passenden Delfin-Chunk = **0,81**; zur völlig themenfremden Vulkane-Quelle = **0,53**. Deutliche Lücke zwischen "relevant" und "irrelevant" vorhanden, nur bisher nicht genutzt.
+
+**Fix:**
+- Neues Setting `chat_similarity_threshold` (Standard `0.6`, konfigurierbar über `.env`) in `backend/app/config.py`.
+- In `backend/app/routers/chat.py`: nach der Ähnlichkeitssuche werden Treffer unterhalb des Schwellenwerts vor der Verwendung als Chat-Kontext **und** als Zitate herausgefiltert (`vector_store.similarity_search` liefert weiterhin die rohen Top-6, die Filterung passiert im Router).
+- Regressionstest `test_chat_filters_out_low_similarity_matches` ergänzt (nutzt exakt die vor Ort gemessenen Werte 0,81/0,53 als Testdaten), der belegt: bei gemischten Treffern landet nur der relevante Chunk im Gemini-Kontext und in den zurückgegebenen Zitaten.
+- **Live erneut verifiziert nach dem Fix:** Frage "Welche Geräusche machen Delfine?" (Notebook enthielt zu diesem Zeitpunkt nur noch `vulkane.md`) lieferte jetzt korrekt **keine Zitate mehr** statt fälschlich die Vulkan-Quelle zu zitieren.
+
+**Nebenproblem beim Testen:** Ein `pkill`-Befehl aus der vorherigen Aufräum-Routine war durch eine Nutzer-Unterbrechung nie ausgeführt worden — der alte Backend-Prozess (ohne den Fix) lief weiter auf Port 8000, wodurch der erste Verifikationsversuch fälschlich noch die alte, fehlerhafte Antwort zeigte (`address already in use` beim Versuch, den "neuen" Server zu starten, der in Wahrheit gar nicht lief). Gefunden durch Prüfen von `/tmp/uvicorn.log`, behoben mit `lsof -ti:8000 | xargs kill -9` vor dem eigentlichen Neustart. Für zukünftige Server-Neustarts nach einer unterbrochenen/abgelehnten Aufräum-Aktion: immer verifizieren, dass der alte Prozess wirklich beendet wurde, bevor Testergebnisse als "nach dem Fix" gewertet werden.
+
+**Testdaten-Hinweis:** Zur Kalibrierung wurde kurzzeitig ein synthetischer Test-Chunk direkt in die Datenbank eingefügt (nicht über die reguläre Upload-Pipeline) und danach wieder entfernt — diente nur dem Vergleich der Ähnlichkeitswerte, keine dauerhafte Datenänderung.
+
+**Ergebnis:** PDF-Upload-Pfad vollständig verifiziert (Upload → Extraktion → Embedding → Chat → Löschen inkl. Storage-Cleanup), zusätzlich ein echter RAG-Qualitätsbug gefunden und behoben, der bei jedem Notebook mit wenigen/thematisch gemischten Quellen aufgetreten wäre.
+
+**Nächster Schritt:** Freigabe für Phase 2 (weiterhin ausstehend) einholen, dann Phase 3 — weitere Quellentypen (URL, YouTube, ggf. Audio).
