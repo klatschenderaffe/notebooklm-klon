@@ -83,6 +83,20 @@ def list_source_storage_paths(notebook_id: str) -> list[str]:
     return [row["storage_path"] for row in rows]
 
 
+def list_presentation_storage_paths(notebook_id: str) -> list[str]:
+    """Wie list_source_storage_paths, aber für generierte Präsentationen (separater
+    Storage-Bucket)."""
+    response = (
+        get_client()
+        .table("presentations")
+        .select("storage_path")
+        .eq("notebook_id", notebook_id)
+        .execute()
+    )
+    rows = cast(list[dict[str, Any]], response.data)
+    return [row["storage_path"] for row in rows]
+
+
 def require_owned_notebook_id(
     notebook_id: str, user_id: str = Depends(get_current_user_id)
 ) -> str:

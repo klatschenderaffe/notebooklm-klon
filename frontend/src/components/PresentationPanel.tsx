@@ -5,6 +5,7 @@ interface PresentationPanelProps {
   notebookId: string
   hasSources: boolean
   selectedSourceIds: string[]
+  onPresentationCreated?: () => void
 }
 
 const COLOR_PRESETS: { label: string; description: string }[] = [
@@ -37,7 +38,12 @@ const TONE_OPTIONS = [
   { label: 'Einfach erklärt', value: 'Einfach erklärt, für Laien verständlich' },
 ]
 
-function PresentationPanel({ notebookId, hasSources, selectedSourceIds }: PresentationPanelProps) {
+function PresentationPanel({
+  notebookId,
+  hasSources,
+  selectedSourceIds,
+  onPresentationCreated,
+}: PresentationPanelProps) {
   const [topic, setTopic] = useState('')
   const [designDescription, setDesignDescription] = useState('')
   const [tone, setTone] = useState('')
@@ -71,6 +77,7 @@ function PresentationPanel({ notebookId, hasSources, selectedSourceIds }: Presen
       link.click()
       URL.revokeObjectURL(url)
       setReadyToOpenInDrive(true)
+      onPresentationCreated?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Präsentation konnte nicht erstellt werden')
     } finally {

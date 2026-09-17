@@ -42,3 +42,18 @@ class PresentationRequest(BaseModel):
     design_description: str | None = None
     tone: str | None = None
     slide_count_hint: str | None = None
+
+
+class ChatMessageOut(BaseModel):
+    id: str
+    role: str
+    content: str
+    citations: list[ChatCitation]
+    created_at: str
+
+
+class PresentationOut(BaseModel):
+    id: str
+    title: str
+    topic: str
+    created_at: str

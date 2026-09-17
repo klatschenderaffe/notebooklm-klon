@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import ChatPanel from '../components/ChatPanel'
+import PresentationHistoryPanel from '../components/PresentationHistoryPanel'
 import PresentationPanel from '../components/PresentationPanel'
 import SourcesPanel from '../components/SourcesPanel'
 import { listSources, type Source } from '../api'
@@ -11,6 +12,7 @@ function NotebookPage() {
   const [sources, setSources] = useState<Source[]>([])
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set())
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [presentationRefreshKey, setPresentationRefreshKey] = useState(0)
 
   const refreshSources = useCallback(() => {
     if (!notebookId) return
@@ -65,6 +67,11 @@ function NotebookPage() {
               notebookId={notebookId}
               hasSources={sources.length > 0}
               selectedSourceIds={[...selectedSourceIds]}
+              onPresentationCreated={() => setPresentationRefreshKey((k) => k + 1)}
+            />
+            <PresentationHistoryPanel
+              notebookId={notebookId}
+              refreshKey={presentationRefreshKey}
             />
           </div>
           <ChatPanel notebookId={notebookId} hasSources={sources.length > 0} />

@@ -29,7 +29,8 @@ def rename_notebook(
 @router.delete("/{notebook_id}", status_code=204)
 def delete_notebook(notebook_id: str, user_id: str = Depends(get_current_user_id)) -> None:
     notebooks_store.get_owned_notebook(user_id, notebook_id)
-    storage_paths = notebooks_store.list_source_storage_paths(notebook_id)
-    for path in storage_paths:
+    for path in notebooks_store.list_source_storage_paths(notebook_id):
         storage.delete_source_file(path)
+    for path in notebooks_store.list_presentation_storage_paths(notebook_id):
+        storage.delete_presentation_file(path)
     notebooks_store.delete_notebook(user_id, notebook_id)

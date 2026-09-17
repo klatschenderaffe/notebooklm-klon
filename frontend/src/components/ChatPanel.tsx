@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ChatCitation } from '../api'
-import { sendChatMessage } from '../api'
+import { getChatHistory, sendChatMessage } from '../api'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -17,6 +17,33 @@ function ChatPanel({ notebookId, hasSources }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [question, setQuestion] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadHistory() {
+      setIsLoadingHistory(true)
+      try {
+        const history = await getChatHistory(notebookId)
+        if (!cancelled) {
+          setMessages(
+            history.map((m) => ({ role: m.role, text: m.content, citations: m.citations }))
+          )
+        }
+      } catch {
+        // Verlauf konnte nicht geladen werden — Chat bleibt trotzdem nutzbar, nur ohne
+        // vorherige Nachrichten. Kein blockierender Fehler.
+      } finally {
+        if (!cancelled) setIsLoadingHistory(false)
+      }
+    }
+
+    loadHistory()
+    return () => {
+      cancelled = true
+    }
+  }, [notebookId])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -46,7 +73,8 @@ function ChatPanel({ notebookId, hasSources }: ChatPanelProps) {
       <h2>Fragen stellen</h2>
 
       <div className="chat-messages">
-        {messages.length === 0 && (
+        {isLoadingHistory && <p className="chat-empty">Verlauf wird geladen …</p>}
+        {!isLoadingHistory && messages.length === 0 && (
           <p className="chat-empty">
             {hasSources
               ? 'Stelle eine Frage zu deinen hochgeladenen Quellen.'

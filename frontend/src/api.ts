@@ -25,6 +25,21 @@ export interface ChatResponse {
   citations: ChatCitation[]
 }
 
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  citations: ChatCitation[]
+  created_at: string
+}
+
+export interface PresentationHistoryItem {
+  id: string
+  title: string
+  topic: string
+  created_at: string
+}
+
 async function authHeader(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
@@ -118,6 +133,14 @@ export async function sendChatMessage(notebookId: string, question: string): Pro
   return response.json()
 }
 
+export async function getChatHistory(notebookId: string): Promise<ChatMessage[]> {
+  const response = await fetch(`${API_URL}/notebooks/${notebookId}/chat/history`, {
+    headers: await authHeader(),
+  })
+  if (!response.ok) throw new Error(await parseErrorMessage(response))
+  return response.json()
+}
+
 // --- Presentations ---
 
 export interface PresentationOptions {
@@ -143,6 +166,28 @@ export async function generatePresentation(
       slide_count_hint: options.slideCountHint || null,
     }),
   })
+  if (!response.ok) throw new Error(await parseErrorMessage(response))
+  return response.blob()
+}
+
+export async function listPresentationHistory(
+  notebookId: string
+): Promise<PresentationHistoryItem[]> {
+  const response = await fetch(`${API_URL}/notebooks/${notebookId}/presentations`, {
+    headers: await authHeader(),
+  })
+  if (!response.ok) throw new Error(await parseErrorMessage(response))
+  return response.json()
+}
+
+export async function downloadPresentation(
+  notebookId: string,
+  presentationId: string
+): Promise<Blob> {
+  const response = await fetch(
+    `${API_URL}/notebooks/${notebookId}/presentations/${presentationId}/download`,
+    { headers: await authHeader() }
+  )
   if (!response.ok) throw new Error(await parseErrorMessage(response))
   return response.blob()
 }

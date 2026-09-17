@@ -39,14 +39,27 @@ def test_notebooks_require_authentication() -> None:
 def test_delete_notebook_cleans_up_storage(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    removed_paths = []
+    removed_source_paths = []
+    removed_presentation_paths = []
     monkeypatch.setattr(
         notebooks_router.notebooks_store,
         "list_source_storage_paths",
         lambda notebook_id: ["a/b/c/datei.pdf", "a/b/d/notiz.md"],
     )
     monkeypatch.setattr(
-        notebooks_router.storage, "delete_source_file", lambda path: removed_paths.append(path)
+        notebooks_router.notebooks_store,
+        "list_presentation_storage_paths",
+        lambda notebook_id: ["a/b/praesentation.pptx"],
+    )
+    monkeypatch.setattr(
+        notebooks_router.storage,
+        "delete_source_file",
+        lambda path: removed_source_paths.append(path),
+    )
+    monkeypatch.setattr(
+        notebooks_router.storage,
+        "delete_presentation_file",
+        lambda path: removed_presentation_paths.append(path),
     )
     monkeypatch.setattr(
         notebooks_router.notebooks_store, "delete_notebook", lambda user_id, notebook_id: None
@@ -55,7 +68,8 @@ def test_delete_notebook_cleans_up_storage(
     response = client.delete("/notebooks/some-notebook-id")
 
     assert response.status_code == 204
-    assert removed_paths == ["a/b/c/datei.pdf", "a/b/d/notiz.md"]
+    assert removed_source_paths == ["a/b/c/datei.pdf", "a/b/d/notiz.md"]
+    assert removed_presentation_paths == ["a/b/praesentation.pptx"]
 
 
 def test_notebook_ownership_check_uses_current_user(
