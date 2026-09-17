@@ -437,3 +437,25 @@ Nutzer hat mit "Ja, mach weiter mit Phase 3" freigegeben. Ziel: Notebooks sollen
 **Ergebnis:** Alle vier Quellentypen (PDF/MD, URL, YouTube, Audio) vollständig end-to-end verifiziert — Ingestion, Embedding, Chat-Retrieval mit korrekten Zitaten. Zwei reale Bugs gefunden und behoben (Embedding-Batching, nicht-atomare Ingestion), beide mit Regressionstests abgesichert. Backend: 82 Tests grün, `ruff`/`mypy` sauber. Frontend: `oxlint` sauber, Produktions-Build erfolgreich.
 
 **Nächster Schritt:** Freigabe des Nutzers für Phase 3 einholen, dann Phase 4 — Notizen pro Quelle.
+
+---
+
+## 2026-09-17 — Phase 4 abgeschlossen: Notizen pro Quelle
+
+Nutzer hat mit "Ja, mach weiter mit Phase 4" freigegeben. Ziel (wie im Ausbauplan festgehalten): einfache Freitext-Notizen pro Quelle, kein Text-Highlighting/Viewer — Quelle aufklappen, Notizen sehen/hinzufügen/löschen.
+
+**Getan:**
+- **Migration `0005_notes.sql`:** neue Tabelle `notes (id, source_id, content, created_at)`. Wie schon bei `chunks` keine eigene `user_id`-Spalte — Eigentümerschaft wird über die Kette `notes → sources → notebooks → auth.users` per RLS-Policy geprüft (Backend filtert zusätzlich explizit, RLS ist Tiefenverteidigung). Vom Nutzer im Supabase SQL Editor ausgeführt und bestätigt.
+- **Backend:** neuer `notes_store.py`-Service (insert/list/delete, letzteres gibt `bool` zurück, ob wirklich eine Zeile gelöscht wurde — Muster aus `notebooks_store.delete_notebook` übernommen). Neuer Router `app/routers/notes.py`, gemountet unter `/notebooks/{notebook_id}/sources/{source_id}/notes`, mit einer eigenen `require_owned_source_id`-Dependency (baut auf der bestehenden `require_owned_notebook_id` auf und prüft zusätzlich, dass die Quelle zu diesem Notebook gehört, per `vector_store.get_source`). Endpoints: `GET`/`POST` auf der Notizen-Liste, `DELETE /{note_id}` (404 falls nicht gefunden). Leerer Notiz-Inhalt wird mit 422 abgelehnt.
+- **Backend-Tests:** neue `test_notes_store.py` (Store-Funktionen mit Fake-Query-Objekt, analog zu `test_history_store.py`) und `test_notes_api.py` (Endpoints inkl. 404 bei fremder/fehlender Quelle, 422 bei leerem Inhalt, 401 ohne Auth). Backend-Testsuite jetzt **93 Tests, alle grün**, `ruff check .` und `mypy app tests` weiterhin sauber.
+- **Frontend:** `api.ts` um `Note`-Typ und `listNotes`/`addNote`/`deleteNote` erweitert. `SourcesPanel.tsx`: jede Quelle bekommt einen "Notizen ▾/▲"-Toggle-Button neben dem Lösch-Button; aufgeklappt erscheint eine neue `SourceNotes`-Komponente (eigener State, lädt die Notizen erst beim ersten Aufklappen nach — kein unnötiger Request pro Quelle beim Laden des Notebooks), zeigt die Liste inkl. Lösch-Button pro Notiz und ein kompaktes Eingabeformular zum Hinzufügen. `App.css` mobile-first um `.source-notes`/`.note-list`/`.note-item`/`.note-toggle-button` ergänzt.
+
+**Probleme / Debugging:**
+1. **Alter Backend-Prozess ohne `--reload` lief noch mit dem Phase-3-Code**, als die neuen Notizen-Endpoints live getestet werden sollten (aus der Live-Verifikation der Vorphase noch offen) — dieselbe Fehlerklasse wie das bereits in Phase 2 dokumentierte Problem. Diesmal präventiv behandelt: vor dem Test explizit `lsof -ti:8000 | xargs kill -9`, Neustart, und zusätzlich der neue Endpoint-Satz direkt über `curl .../openapi.json` verifiziert (`/notebooks/{id}/sources/{id}/notes` taucht auf), bevor der Browser-Test überhaupt begann — kein erneuter Fehlalarm diesmal.
+2. Keine weiteren funktionalen Probleme — Feature verlief beim ersten Live-Versuch fehlerfrei.
+
+**Live-Verifikation (frischer Tab, Backend neu gestartet):** Bei `vulkane.md` "Notizen ▾" aufgeklappt → korrekt "Noch keine Notizen". Notiz "Ätna ist der aktivste Vulkan Europas" hinzugefügt → erscheint sofort in der Liste, Eingabefeld leert sich. **Persistenz-Test:** Seite neu geladen, Notizen-Bereich erneut aufgeklappt → Notiz korrekt aus der DB nachgeladen (nicht nur lokaler State). **Lösch-Test:** Notiz über ihren ✕-Button entfernt → sofort aus der Liste verschwunden, zurück zu "Noch keine Notizen". **Isolations-Test:** `wombats.wav` (andere Quelle im selben Notebook) aufgeklappt → zeigt korrekt keine Notizen, bestätigt saubere Trennung pro Quelle statt pro Notebook.
+
+**Ergebnis:** Notizen-Feature vollständig end-to-end verifiziert (Erstellen, Anzeigen, Persistenz über Reload, Löschen, Isolation zwischen Quellen). Backend: 93 Tests grün, `ruff`/`mypy` sauber. Frontend: `oxlint` sauber, Produktions-Build erfolgreich.
+
+**Nächster Schritt:** Freigabe des Nutzers für Phase 4 einholen, dann Phase 5 — DevOps-Ausbau.

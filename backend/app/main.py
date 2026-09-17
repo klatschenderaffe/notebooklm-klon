@@ -7,7 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from app.config import settings
-from app.routers import chat, health, notebooks, presentations, sources
+from app.routers import chat, health, notebooks, notes, presentations, sources
 
 logger = logging.getLogger(__name__)
 
@@ -54,5 +54,6 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(notebooks.router)
 app.include_router(sources.router)
+app.include_router(notes.router)
 app.include_router(chat.router)
 app.include_router(presentations.router)

@@ -1,6 +1,14 @@
-import { useRef, useState } from 'react'
-import type { Source } from '../api'
-import { addUrlSource, addYoutubeSource, deleteSource, uploadSource } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import type { Note, Source } from '../api'
+import {
+  addNote,
+  addUrlSource,
+  addYoutubeSource,
+  deleteNote,
+  deleteSource,
+  listNotes,
+  uploadSource,
+} from '../api'
 
 interface SourcesPanelProps {
   notebookId: string
@@ -18,6 +26,104 @@ const TYPE_LABELS: Record<Source['file_type'], string> = {
   audio: 'Audio',
 }
 
+interface SourceNotesProps {
+  notebookId: string
+  sourceId: string
+}
+
+function SourceNotes({ notebookId, sourceId }: SourceNotesProps) {
+  const [notes, setNotes] = useState<Note[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [newNote, setNewNote] = useState('')
+  const [isAdding, setIsAdding] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setIsLoading(true)
+      try {
+        const data = await listNotes(notebookId, sourceId)
+        if (!cancelled) setNotes(data)
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Notizen konnten nicht geladen werden')
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [notebookId, sourceId])
+
+  async function handleAddNote(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = newNote.trim()
+    if (!trimmed || isAdding) return
+
+    setError(null)
+    setIsAdding(true)
+    try {
+      const note = await addNote(notebookId, sourceId, trimmed)
+      setNotes((prev) => [...prev, note])
+      setNewNote('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Notiz konnte nicht gespeichert werden')
+    } finally {
+      setIsAdding(false)
+    }
+  }
+
+  async function handleDeleteNote(noteId: string) {
+    try {
+      await deleteNote(notebookId, sourceId, noteId)
+      setNotes((prev) => prev.filter((note) => note.id !== noteId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Notiz konnte nicht gelöscht werden')
+    }
+  }
+
+  return (
+    <div className="source-notes">
+      {isLoading && <p className="hint-text">Notizen werden geladen …</p>}
+      {!isLoading && notes.length === 0 && <p className="hint-text">Noch keine Notizen</p>}
+      {!isLoading && notes.length > 0 && (
+        <ul className="note-list">
+          {notes.map((note) => (
+            <li key={note.id} className="note-item">
+              <span className="note-content">{note.content}</span>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => handleDeleteNote(note.id)}
+                aria-label="Notiz löschen"
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="chat-input-row note-add-form" onSubmit={handleAddNote}>
+        <input
+          type="text"
+          value={newNote}
+          onChange={(e) => setNewNote(e.target.value)}
+          placeholder="Notiz hinzufügen …"
+          disabled={isAdding}
+        />
+        <button type="submit" disabled={isAdding || !newNote.trim()}>
+          {isAdding ? '…' : '+'}
+        </button>
+      </form>
+      {error && <p className="error-text">{error}</p>}
+    </div>
+  )
+}
+
 function SourcesPanel({
   notebookId,
   sources,
@@ -33,6 +139,7 @@ function SourcesPanel({
   const [isAddingUrl, setIsAddingUrl] = useState(false)
   const [youtubeValue, setYoutubeValue] = useState('')
   const [isAddingYoutube, setIsAddingYoutube] = useState(false)
+  const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
 
   async function handleFiles(files: FileList | null) {
     const file = files?.[0]
@@ -153,27 +260,43 @@ function SourcesPanel({
       {error && <p className="error-text">{error}</p>}
 
       <ul className="source-list">
-        {sources.map((source) => (
-          <li key={source.id} className="source-item">
-            <label className="source-checkbox-label">
-              <input
-                type="checkbox"
-                checked={selectedSourceIds.has(source.id)}
-                onChange={() => onToggleSource(source.id)}
-              />
-              <span className="source-type-badge">{TYPE_LABELS[source.file_type]}</span>
-              <span className="source-name">{source.filename}</span>
-            </label>
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => handleDelete(source.id)}
-              aria-label={`${source.filename} löschen`}
-            >
-              ✕
-            </button>
-          </li>
-        ))}
+        {sources.map((source) => {
+          const isExpanded = expandedSourceId === source.id
+          return (
+            <li key={source.id} className="source-list-item">
+              <div className="source-item">
+                <label className="source-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={selectedSourceIds.has(source.id)}
+                    onChange={() => onToggleSource(source.id)}
+                  />
+                  <span className="source-type-badge">{TYPE_LABELS[source.file_type]}</span>
+                  <span className="source-name">{source.filename}</span>
+                </label>
+                <div className="source-item-actions">
+                  <button
+                    type="button"
+                    className="note-toggle-button"
+                    onClick={() => setExpandedSourceId(isExpanded ? null : source.id)}
+                    aria-expanded={isExpanded}
+                  >
+                    {isExpanded ? 'Notizen ▲' : 'Notizen ▾'}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={() => handleDelete(source.id)}
+                    aria-label={`${source.filename} löschen`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              {isExpanded && <SourceNotes notebookId={notebookId} sourceId={source.id} />}
+            </li>
+          )
+        })}
         {sources.length === 0 && <li className="source-empty">Noch keine Quellen hochgeladen</li>}
       </ul>
       {sources.length > 0 && (

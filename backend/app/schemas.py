@@ -52,6 +52,16 @@ class PresentationRequest(BaseModel):
     slide_count_hint: str | None = None
 
 
+class NoteCreate(BaseModel):
+    content: str
+
+
+class NoteOut(BaseModel):
+    id: str
+    content: str
+    created_at: str
+
+
 class ChatMessageOut(BaseModel):
     id: str
     role: str

@@ -33,6 +33,12 @@ export interface ChatMessage {
   created_at: string
 }
 
+export interface Note {
+  id: string
+  content: string
+  created_at: string
+}
+
 export interface PresentationHistoryItem {
   id: string
   title: string
@@ -139,6 +145,46 @@ export async function addYoutubeSource(notebookId: string, url: string): Promise
   })
   if (!response.ok) throw new Error(await parseErrorMessage(response))
   return response.json()
+}
+
+// --- Notizen ---
+
+export async function listNotes(notebookId: string, sourceId: string): Promise<Note[]> {
+  const response = await fetch(
+    `${API_URL}/notebooks/${notebookId}/sources/${sourceId}/notes`,
+    { headers: await authHeader() }
+  )
+  if (!response.ok) throw new Error(await parseErrorMessage(response))
+  return response.json()
+}
+
+export async function addNote(
+  notebookId: string,
+  sourceId: string,
+  content: string
+): Promise<Note> {
+  const response = await fetch(
+    `${API_URL}/notebooks/${notebookId}/sources/${sourceId}/notes`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ content }),
+    }
+  )
+  if (!response.ok) throw new Error(await parseErrorMessage(response))
+  return response.json()
+}
+
+export async function deleteNote(
+  notebookId: string,
+  sourceId: string,
+  noteId: string
+): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/notebooks/${notebookId}/sources/${sourceId}/notes/${noteId}`,
+    { method: 'DELETE', headers: await authHeader() }
+  )
+  if (!response.ok) throw new Error(await parseErrorMessage(response))
 }
 
 // --- Chat ---
