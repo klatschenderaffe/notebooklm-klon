@@ -1,8 +1,9 @@
 name: E2E Tests
 
-# Bewusst NICHT bei jedem Push/PR -- die Smoke-Tests starten den echten Frontend-Dev-Server
-# und würden bei Erweiterung um echte Login-Flows Gemini-/Supabase-Kontingent verbrauchen.
-# Stattdessen: manuell auslösbar + wöchentlich als Regressions-Check.
+# Läuft gegen die echte, live deployte Staging-Umgebung (Frontend auf Cloudflare Workers,
+# das gegen das echte Render-Staging-Backend und ein echtes Supabase-Staging-Projekt spricht).
+# Ein grüner Lauf ist damit ein echter Beweis, dass die komplette Staging-Kette online ist.
+# Bewusst NICHT bei jedem Push/PR, sondern manuell auslösbar + wöchentlich als Regressions-Check.
 on:
   workflow_dispatch:
   schedule:
@@ -21,31 +22,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Frontend-Dependencies installieren
-        working-directory: frontend
-        run: npm ci
-
-      - name: Frontend-Dev-Server starten
-        working-directory: frontend
-        env:
-          VITE_API_URL: ${{ secrets.E2E_VITE_API_URL }}
-          VITE_SUPABASE_URL: ${{ secrets.E2E_VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.E2E_VITE_SUPABASE_ANON_KEY }}
-        run: nohup npm run dev -- --port 5173 > /tmp/vite-dev.log 2>&1 &
-
-      - name: Warten bis der Dev-Server erreichbar ist
-        run: |
-          for i in $(seq 1 30); do
-            if curl -s -o /dev/null http://localhost:5173; then
-              echo "Dev-Server ist erreichbar."
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Dev-Server nach 60s nicht erreichbar." >&2
-          cat /tmp/vite-dev.log || true
-          exit 1
-
       - name: E2E-Dependencies installieren
         working-directory: e2e
         run: npm ci
@@ -57,12 +33,10 @@ jobs:
       - name: Playwright-Tests ausführen
         working-directory: e2e
         env:
-          E2E_BASE_URL: http://localhost:5173
+          E2E_BASE_URL: https://develop-notebooklm-klon.piaheiss.workers.dev
+          E2E_TEST_USER_EMAIL: ${{ secrets.E2E_TEST_USER_EMAIL }}
+          E2E_TEST_USER_PASSWORD: ${{ secrets.E2E_TEST_USER_PASSWORD }}
         run: npm test
-
-      - name: Vite-Dev-Server-Log bei Fehlschlag ausgeben
-        if: failure()
-        run: cat /tmp/vite-dev.log || true
 
       - uses: actions/upload-artifact@v4
         if: failure()
