@@ -627,3 +627,17 @@ Nutzerwunsch: rechtliche Absicherung gegen Abmahnungen (u.a. das bekannte deutsc
 **Verifikation:** `npm run lint`/`npm run build` sauber, live im Browser geprüft (lokaler Dev-Server) — beide Seiten rendern korrekt, sind ohne Login erreichbar (nach `signOut()` erneut aufgerufen, funktioniert weiterhin), Footer erscheint konsistent.
 
 **Ergebnis:** Rechtlich sinnvolle Grundabsicherung vorhanden, aber ausdrücklich als Entwurf markiert — die Platzhalter-Daten müssen vor echtem Live-Betrieb mit echten Nutzer:innen durch echte Angaben ersetzt werden, und beide Texte sollten im Zweifel fachlich gegengelesen werden.
+
+---
+
+## 2026-09-18 — Bug behoben: Chat-Fenster wuchs mit statt intern zu scrollen
+
+Nutzerwunsch: das Chat-Fenster im Notebook soll bei vielen Nachrichten selbst scrollen, nicht die ganze Seite — und auf Desktop-Breite soll seine Höhe an der linken Spalte (Quellen/Präsentation) ausgerichtet sein, nicht an einem festen Viewport-Wert.
+
+**Erster Teilfund:** `.chat-messages` hatte zwar schon `overflow-y: auto`, aber ohne `min-height: 0` auf dem Flex-Kind (Standard-Flexbox-Falle: ein Flex-Item wird nie kleiner als sein Inhalt, außer man setzt das explizit) griff das nie — der Container wuchs stattdessen einfach unbegrenzt mit.
+
+**Zweiter, subtilerer Fund beim Umsetzen der Höhen-Angleichung an die linke Spalte:** `align-items: stretch` im CSS-Grid-Layout plus `min-height: 0`/`overflow: hidden` auf dem Grid-Element selbst reichte NICHT aus — mehrfach live mit injizierten Test-Nachrichten und `getBoundingClientRect()`/`scrollHeight`-Messungen verifiziert, nicht nur angenommen. Grund: die "automatische Minimalgröße wird bei Scroll-Containern ignoriert"-Sonderregel des Grid-Layouts gilt nur für das Element, das selbst `overflow` gesetzt hat (`.chat-messages`), nicht für dessen Elternelement (`.chat-panel`, das eigentliche Grid-Element) — dessen ungekürzter Inhalt floss weiterhin in die automatische Zeilenhöhen-Berechnung ein und blähte dadurch auch die linke Spalte mit auf.
+
+**Fix:** Reines CSS kann "an der Höhe eines Geschwister-Elements ausrichten" und "eigenen, potenziell viel längeren Inhalt intern exakt darauf deckeln" nicht gleichzeitig leisten, wenn die Referenzhöhe selbst inhaltsabhängig ist — dafür ist ein kleines Stück JavaScript nötig. `NotebookPage.tsx`: `ResizeObserver` misst die tatsächliche Höhe der linken Spalte (`.layout-column`) und reicht sie als CSS-Variable (`--chat-panel-match-height`) an einen neuen Wrapper um `ChatPanel` weiter. `App.css`: `.chat-panel` nutzt diese Variable nur innerhalb der Desktop-Media-Query (`height: var(--chat-panel-match-height, 420px)`), mobil bleibt der ursprüngliche `min-height`/`max-height: 70vh`-Fallback unverändert aktiv.
+
+**Verifikation:** Live mit 30 per JS injizierten Test-Nachrichten geprüft (kein echter Gemini-Call nötig für einen reinen Layout-Test) — Unterkante von linker Spalte und Chat-Panel exakt identisch (907px), vorher wie nachher; `chat-messages.scrollHeight` (1789px) deutlich größer als `clientHeight` (603px) bei unverändertem `document.body.scrollHeight` — bestätigt echtes internes Scrollen statt Seiten-Wachstum. Mobile Breite (~500px) separat geprüft: unverändert weiterhin per `max-height: 70vh` gedeckelt, von der Desktop-Änderung unberührt. `npm run lint`/`npm run build` sauber.
