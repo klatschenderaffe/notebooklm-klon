@@ -1,4 +1,14 @@
+import logging
+from typing import Any
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+# Fällt zurück auf diesen Wert, wenn SENTRY_TRACES_SAMPLE_RATE nicht als Zahl parsbar ist
+# (siehe sentry_traces_sample_rate-Validator unten).
+DEFAULT_SENTRY_TRACES_SAMPLE_RATE = 1.0
 
 
 class Settings(BaseSettings):
@@ -35,6 +45,44 @@ class Settings(BaseSettings):
     # siehe app/main.py.
     sentry_dsn: str = ""
     environment: str = "development"
+
+    # Anteil der Requests (0.0-1.0), für die Sentry Performance-Traces erfasst. Aktuell
+    # bewusst hoch (1.0 = 100%) für die Staging-/Demo-Phase ohne echten Produktivtraffic,
+    # um beim Aufbau möglichst vollständige Traces zu bekommen. Bei echtem
+    # Produktivbetrieb mit nennenswertem Traffic sollte dieser Wert auf z.B. 0.1-0.2
+    # reduziert werden, um im kostenlosen Sentry-Kontingent (5.000.000 Spans/Monat) zu
+    # bleiben.
+    sentry_traces_sample_rate: float = DEFAULT_SENTRY_TRACES_SAMPLE_RATE
+
+    @field_validator("sentry_traces_sample_rate", mode="before")
+    @classmethod
+    def _parse_sentry_traces_sample_rate(cls, value: Any) -> Any:
+        """Robuster Fallback statt Crash beim Settings-Laden.
+
+        Ein nicht-parsbarer Wert (z.B. leerer String, weil ein Feld im Render-Dashboard
+        versehentlich leer gelassen wurde) würde pydantic sonst eine ValidationError
+        werfen lassen -- und zwar beim Modul-Import (`settings = Settings()` unten), also
+        BEVOR app/main.py's try/except um _init_sentry() überhaupt greifen kann. Das
+        würde den kompletten Backend-Start verhindern, nicht nur Sentry. Analog zum
+        Frontend-Pattern in frontend/src/main.tsx (Number(...) mit
+        Number.isFinite-Fallback), das aus demselben Grund existiert.
+
+        Gültige, aber außerhalb von [0, 1] liegende Werte (z.B. 5.0) werden hier bewusst
+        durchgereicht -- die validiert sentry_sdk selbst (is_valid_sample_rate) und
+        deaktiviert Sampling bei ungültigem Wert nur mit einer Warnung, ohne zu crashen.
+        """
+        if value is None or isinstance(value, int | float):
+            return value
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "SENTRY_TRACES_SAMPLE_RATE=%r ist nicht als Zahl parsbar, "
+                "verwende Standardwert %s.",
+                value,
+                DEFAULT_SENTRY_TRACES_SAMPLE_RATE,
+            )
+            return DEFAULT_SENTRY_TRACES_SAMPLE_RATE
 
 
 settings = Settings()

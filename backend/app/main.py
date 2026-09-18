@@ -53,9 +53,10 @@ def _init_sentry() -> None:
     """Initialisiert Sentry Error-Tracking, falls ein DSN konfiguriert ist.
 
     Bei leerem SENTRY_DSN (Standard, z.B. lokale Entwicklung/CI ohne Sentry-Account) ist
-    dies ein reines No-Op — sentry_sdk.init wird dann NICHT aufgerufen. Nur
-    Error-Tracking, kein Performance-Tracing (traces_sample_rate wird bewusst nicht
-    gesetzt, Standard dafür ist None/aus).
+    dies ein reines No-Op — sentry_sdk.init wird dann NICHT aufgerufen. Das
+    Performance-Tracing (traces_sample_rate) ist über settings.sentry_traces_sample_rate
+    konfigurierbar (Standard: 1.0 = 100%, siehe app/config.py für die Kontingent-
+    Überlegung bei echtem Produktivbetrieb).
 
     Diese Funktion läuft als bare Top-Level-Call beim Modul-Import, VOR `app =
     FastAPI(...)`. sentry_sdk.init() muss deshalb gegen Exceptions abgesichert werden:
@@ -74,6 +75,7 @@ def _init_sentry() -> None:
         sentry_sdk.init(
             dsn=settings.sentry_dsn,
             environment=settings.environment,
+            traces_sample_rate=settings.sentry_traces_sample_rate,
             integrations=[StarletteIntegration(), FastApiIntegration()],
         )
     except Exception:

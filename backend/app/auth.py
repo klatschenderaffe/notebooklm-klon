@@ -1,6 +1,7 @@
 from typing import Any
 
 import jwt
+import sentry_sdk
 from fastapi import HTTPException, Request
 from jwt import PyJWKClient
 
@@ -48,4 +49,14 @@ def get_current_user_id(request: Request) -> str:
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Ungültiges Token")
-    return str(user_id)
+
+    user_id = str(user_id)
+    # Ordnet Sentry-Fehlerreports dieser Anfrage einem Nutzer zu, damit z.B. wiederholte
+    # Fehler eines einzelnen Nutzers erkennbar sind. Bewusst NUR die user_id (keine
+    # E-Mail/IP/sonstigen PII) statt des pauschalen send_default_pii=True-Schalters, um
+    # keine unnötigen personenbezogenen Daten an Sentry zu übermitteln. set_user()
+    # schreibt nur in den aktuellen Scope und ist ein No-Op, falls Sentry gar nicht
+    # initialisiert wurde (kein SENTRY_DSN gesetzt) — siehe sentry_sdk.Scope.set_user.
+    sentry_sdk.set_user({"id": user_id})
+
+    return user_id
