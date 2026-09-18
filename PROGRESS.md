@@ -592,3 +592,18 @@ Nach dem Umstellen der UptimeRobot-Monitore von Staging auf Produktion (auf Nutz
 **Fix:** Neuer, eigenständiger Cloudflare Worker `notebooklm-klon-health-proxy` (`infra/health-proxy/`, ca. 20 Zeilen Code) — ruft Renders `/health`-Endpoint serverseitig aus Cloudflares eigenem Netz ab (kein UptimeRobot-Header/IP im eigentlichen Render-Request mehr) und reicht die Antwort unverändert durch. UptimeRobot prüft jetzt diesen Worker statt direkt Render. Per `wrangler login` + `wrangler deploy` direkt lokal deployt (kein Git-Push-Workflow nötig für dieses kleine Stück Infrastruktur). Live mit exakt UptimeRobots eigenem User-Agent-String verifiziert (`curl -A "...UptimeRobot/2.0..."`) — liefert zuverlässig `200 {"status":"ok"}`.
 
 **Ergebnis:** UptimeRobot-Backend-Monitor auf die neue Proxy-URL umgestellt, zeigt seitdem korrekt "Up". Guter Beleg dafür, Fehlermeldungen (Response-Header) genau zu lesen statt vorschnell "Netzwerkproblem" anzunehmen — der entscheidende Hinweis (`X-Render-Routing: no-deploy`, `Server: cloudflare`) stand die ganze Zeit in den Daten, die UptimeRobot selbst schon zeigte.
+
+---
+
+## 2026-09-18 — QA-Gate technisch durchgesetzt (GitHub Branch-Protection für `main`)
+
+Der zu Beginn gemeinsam entworfene Dev→Stage→QA-Gate→Prod-Workflow (siehe Excalidraw-Grafik, lokal) war bis hierhin nur Konvention/Dokumentation, nicht technisch erzwungen. Letzter Baustein: eine echte GitHub-Branch-Protection-Regel für `main`, per `gh api` gesetzt (statt Dashboard-Klickpfad, direkt reproduzierbar):
+
+- **Pull Request Pflicht** vor jedem Merge nach `main` — kein direkter Push mehr möglich.
+- **Die drei CI-Checks aus `ci.yml`** (`Secret Scan (Gitleaks)`, `Frontend (Lint, Typecheck, Build)`, `Backend (Lint, Typecheck, Test)`) müssen grün sein, bevor gemergt werden kann.
+- **`enforce_admins: true`** ("Include administrators") — bewusst aktiviert, nach expliziter Rückfrage beim Nutzer, welche Konsequenz das hat: die Regel gilt jetzt auch für den Repo-Owner selbst, nicht nur für hypothetische weitere Mitwirkende. Das ändert den bisher in dieser gesamten Session genutzten Workflow (direkter Push auf `main` nach Freigabe) — ab jetzt braucht jede Änderung an `main` einen Pull Request.
+- **Keine Review-Pflicht** (`required_approving_review_count: 0`) — bewusst so, weil ein Solo-Projekt ohne weitere Mitwirkende sich sonst selbst blockieren würde (GitHub lässt eigene PRs i.d.R. nicht als Reviewer freigeben).
+- Force-Push und Löschen von `main` zusätzlich verboten (Standard-Absicherung).
+- Explizit als reversibel eingeordnet und mit dem Nutzer besprochen: die gesamte Regel bzw. einzelne Einstellungen (insb. "Include administrators") lassen sich jederzeit wieder ändern/entfernen.
+
+**Ergebnis:** Aus dem in der Architektur-Grafik entworfenen QA-Gate ist jetzt eine technisch durchgesetzte Regel geworden, kein reines Diagramm/Versprechen mehr — passend zum ursprünglichen Nutzerwunsch, dass "Fehlerfrei? → main" wirklich nur nach bestandener CI passieren kann.
