@@ -1,0 +1,6 @@
+name = "notebooklm-klon-health-proxy"
+main = "index.js"
+compatibility_date = "2026-09-16"
+
+[vars]
+UPSTREAM_HEALTH_URL = "https://notebooklm-klon-api.onrender.com/health"

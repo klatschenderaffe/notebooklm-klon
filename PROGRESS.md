@@ -550,3 +550,45 @@ Echter Sentry-Account angelegt (Backend-Projekt "FastAPI", Frontend-Projekt "Rea
 **Finale Verifikation:** Alle 5 Tests grün gegen die echte Staging-URL (inkl. Lauf ohne Credentials → sauberer Skip statt Fehlschlag, wie vorgesehen).
 
 **Ergebnis:** Phase 5 (DevOps-Ausbau) ist damit vollständig abgeschlossen — Sentry (Error-Tracking + Performance-Tracing + Nutzer-Zuordnung), externes Uptime-Monitoring, und ein E2E-Test, der wirklich die komplette Staging-Kette verifiziert, statt nur oberflächlich UI zu prüfen. Nach dem Commit/Push (Freigabe erhalten) die beiden GitHub-Secrets angelegt (`E2E_TEST_USER_EMAIL`, `E2E_TEST_USER_PASSWORD`) und den Workflow manuell in echtem GitHub Actions ausgelöst — lief grün durch, nicht nur bei lokaler Verifikation.
+
+---
+
+## 2026-09-18 — Produktivumgebung real aufgebaut (Dev→Stage→QA-Gate→Prod-Zielbild umgesetzt)
+
+Ausgangspunkt war eine gemeinsame Architektur-Grafik (Excalidraw, lokal, nicht im Repo — siehe Claude-Memory `diagram-files-stay-local.md`), bei der der Nutzer einen klassischen Dev→Stage→QA-Gate→Prod-Promotion-Workflow beschrieben hat. Dabei kam die entscheidende Frage auf: Supabase Free-Tier erlaubt nur **2 aktive Projekte gleichzeitig** — mit Dev (Cloud) und Staging waren beide Slots schon belegt, ein drittes Projekt für echte Produktion war also nicht direkt möglich.
+
+**Lösung: Dev auf lokalen Supabase-CLI-Stack umgezogen, statt Cloud-Projekt.**
+- Docker war bereits installiert, Supabase-CLI per `brew install supabase/tap/supabase` ergänzt.
+- `supabase init` in `backend/` ausgeführt — die bestehenden 5 Migrationsdateien (`0001`–`0005`) wurden von der CLI automatisch als ihr eigenes Migrations-Verzeichnis erkannt, keine Anpassung nötig (die versionierte Migrations-Struktur aus Phase 1 zahlt sich hier aus).
+- `config.toml` angepasst: Auth-Redirect von Standard `127.0.0.1:3000` auf `localhost:5173` korrigiert, `sources`-Bucket direkt als Code (`[storage.buckets.sources]`) definiert statt wie bei Staging manuell im Dashboard — sauberer, weil versioniert.
+- `supabase start`: alle 5 Migrationen liefen automatisch durch, Bucket wurde automatisch erstellt. `backend/.env`/`frontend/.env.local` auf die (öffentlich bekannten) lokalen CLI-Standardwerte umgestellt. End-to-End im Browser verifiziert: Signup → sofortiger Login (lokaler Stack verlangt standardmäßig keine E-Mail-Bestätigung) → Dashboard lädt korrekt.
+- Nutzer hat danach das alte Cloud-Dev-Projekt selbst im Supabase-Dashboard gelöscht (kein "Pause"-Button mehr vorhanden, nur noch "Delete") — Slot frei für ein echtes Produktions-Projekt.
+
+**Neues, sauberes Produktions-Supabase-Projekt** nach demselben Verfahren wie Staging angelegt (5 Migrationen, `sources`-Bucket).
+
+**`render.yaml` vervollständigt:** hatte bisher nur 4 von 8 tatsächlich benötigten Env-Var-Deklarationen (`SUPABASE_JWT_SECRET`, `SENTRY_DSN`, `ENVIRONMENT`, `SENTRY_TRACES_SAMPLE_RATE` fehlten) — ergänzt, zusammen mit `region: frankfurt` und `branch: main` (aus einem versehentlich entdeckten Render-Export des Staging-Service übernommen, um konsistent zur Staging-Region zu bleiben).
+
+**Render-Produktion:** Der "Blueprint"-Menüpunkt war im "New +"-Menü nicht auffindbar (UI-Änderung) — stattdessen über den linken Sidebar-Punkt "Blueprints" gefunden, dort aber zunächst nur eine Export-Funktion für den bestehenden Staging-Service angetroffen (nicht das, was gebraucht wurde). Letztlich wurde der Produktions-Service manuell angelegt (analog zu Staging), mit denselben Werten (Branch `main`, Region Frankfurt), die eigentlich für die Blueprint-Variante vorgesehen waren — `render.yaml` bleibt trotzdem als korrekte Dokumentation/Vorlage im Repo.
+
+**Echter Architektur-Fund bei Cloudflare, der die ursprüngliche Annahme korrigiert hat:** Die neue "Workers mit Assets"-Struktur (siehe schon Phase 5, `wrangler deploy` statt `wrangler pages deploy`) hat **kein** eingebautes Production/Preview-Split bei den Umgebungsvariablen wie die klassische "Pages"-Variante — es gibt nur eine einzige, projektweite Variablen-Liste, unabhängig vom Branch. Das hätte bedeutet, dass die für Staging gesetzten Werte (Preview) auch für einen Produktions-Build gegolten hätten. **Fix:** zweites, komplett eigenständiges Cloudflare-Projekt (`notebooklm-klon-prod`) für Produktion angelegt, mit eigenem, unabhängigem Variablen-Satz — analog zur bereits etablierten Trennung bei Supabase und Render.
+- Nebenbefund beim Einrichten: ein expliziter `--name`-Override im Deploy-Command wurde von Cloudflares Build-System automatisch auf den Projektnamen zurückkorrigiert ("Failed to match Worker name... Overriding using the CI provided Worker name") — Cloudflare erzwingt also von sich aus, dass der Worker-Name zum Projektnamen passt, was Namens-Kollisionen zwischen den beiden Projekten strukturell verhindert. Der Override war unnötig, aber harmlos.
+
+**Cross-Referenzen fertiggestellt:** `ALLOWED_ORIGINS` in Render-Produktion auf die neue Cloudflare-Prod-URL gesetzt; Supabase Auth "Site URL" im Produktions-Projekt korrekt auf die echte Frontend-URL gesetzt (nicht mehr der Standardwert `localhost:3000`, den wir bei Staging bewusst unkorrigiert gelassen hatten) — live per Bestätigungsmail verifiziert, dass der `redirect_to`-Parameter jetzt tatsächlich auf `https://notebooklm-klon-prod.piaheiss.workers.dev` zeigt statt auf `localhost:3000`.
+
+**End-to-End-Verifikation (komplette Produktionskette):** Testkonto `nlmklon-prod-check@mailinator.com` registriert, Bestätigungsmail über die Mailinator-API abgerufen und verifiziert, Login getestet: Cloudflare-Produktion → Supabase Auth (Produktions-Projekt) → Render-Produktion → Datenbank-Query erfolgreich ("0 Notebooks"). Alle vier Bausteine der Produktionskette funktional bestätigt.
+
+**Noch offen:** QA-Gate technisch über GitHub Branch-Protection-Regeln für `main` erzwingen (aktuell nur als Konvention/Diagramm dokumentiert, nicht technisch durchgesetzt).
+
+---
+
+## 2026-09-18 — Bug gefunden und behoben: UptimeRobot zeigt Produktions-Backend fälschlich als "down"
+
+Nach dem Umstellen der UptimeRobot-Monitore von Staging auf Produktion (auf Nutzerwunsch, da Produktion die kritischere Umgebung ist) zeigte der Backend-Monitor durchgehend "down", obwohl `curl` denselben Endpunkt jederzeit mit `200 OK` beantwortete.
+
+**Root Cause gefunden, nicht vermutet:** Der Incident-Detail-Response von UptimeRobot enthielt den Header `X-Render-Routing: no-deploy` sowie `Server: cloudflare` — Render liegt selbst hinter einer eigenen, von uns nicht konfigurierbaren Cloudflare-Zone. Recherche (siehe Cloudflare-Community-Threads) bestätigte: das ist ein bekanntes, dokumentiertes Problem — Cloudflare blockt standardmäßig bekannte Monitoring-Bot-Signaturen (u.a. UptimeRobots User-Agent/IP-Bereiche), auch wenn der Dienst dahinter einwandfrei läuft. Der parallel laufende Frontend-Monitor (eigene Cloudflare-Zone, von uns kontrolliert) war nicht betroffen — das hat die Diagnose auf "Renders Zone, nicht unsere" eingegrenzt.
+
+**Alternative Tools kurz recherchiert, aber verworfen:** Kein zuverlässiger Beleg gefunden, dass ein bestimmtes kostenloses Monitoring-Tool garantiert an Renders (nicht unserer) Cloudflare-Konfiguration vorbeikommt — bewusst nicht geraten, stattdessen eine Lösung gewählt, die nicht vom Zufall abhängt.
+
+**Fix:** Neuer, eigenständiger Cloudflare Worker `notebooklm-klon-health-proxy` (`infra/health-proxy/`, ca. 20 Zeilen Code) — ruft Renders `/health`-Endpoint serverseitig aus Cloudflares eigenem Netz ab (kein UptimeRobot-Header/IP im eigentlichen Render-Request mehr) und reicht die Antwort unverändert durch. UptimeRobot prüft jetzt diesen Worker statt direkt Render. Per `wrangler login` + `wrangler deploy` direkt lokal deployt (kein Git-Push-Workflow nötig für dieses kleine Stück Infrastruktur). Live mit exakt UptimeRobots eigenem User-Agent-String verifiziert (`curl -A "...UptimeRobot/2.0..."`) — liefert zuverlässig `200 {"status":"ok"}`.
+
+**Ergebnis:** UptimeRobot-Backend-Monitor auf die neue Proxy-URL umgestellt, zeigt seitdem korrekt "Up". Guter Beleg dafür, Fehlermeldungen (Response-Header) genau zu lesen statt vorschnell "Netzwerkproblem" anzunehmen — der entscheidende Hinweis (`X-Render-Routing: no-deploy`, `Server: cloudflare`) stand die ganze Zeit in den Daten, die UptimeRobot selbst schon zeigte.
