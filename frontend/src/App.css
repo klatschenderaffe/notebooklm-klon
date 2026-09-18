@@ -645,3 +645,44 @@ form button[type='submit']:disabled {
     width: auto;
   }
 }
+
+.app-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.app-footer a {
+  color: var(--text-muted);
+}
+
+.legal-page {
+  max-width: 100%;
+  line-height: 1.6;
+}
+
+.legal-page h2 {
+  margin-top: 0;
+}
+
+.legal-page h3 {
+  margin-top: 24px;
+  font-size: 16px;
+}
+
+.legal-warning {
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 14px;
+}
+
+@media (min-width: 800px) {
+  .legal-page {
+    max-width: 720px;
+  }
+}

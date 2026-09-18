@@ -607,3 +607,23 @@ Der zu Beginn gemeinsam entworfene Dev→Stage→QA-Gate→Prod-Workflow (siehe 
 - Explizit als reversibel eingeordnet und mit dem Nutzer besprochen: die gesamte Regel bzw. einzelne Einstellungen (insb. "Include administrators") lassen sich jederzeit wieder ändern/entfernen.
 
 **Ergebnis:** Aus dem in der Architektur-Grafik entworfenen QA-Gate ist jetzt eine technisch durchgesetzte Regel geworden, kein reines Diagramm/Versprechen mehr — passend zum ursprünglichen Nutzerwunsch, dass "Fehlerfrei? → main" wirklich nur nach bestandener CI passieren kann.
+
+Direkt praktisch erprobt: der PROGRESS.md-Eintrag zu genau dieser Regel musste selbst schon über einen Pull Request laufen (direkter Push auf `main` war ab sofort nicht mehr möglich) — PR #1 erstellt, CI grün abgewartet, gemerged. Der neue Workflow funktioniert also nachweislich.
+
+---
+
+## 2026-09-18 — Impressum & Datenschutzerklärung ergänzt, Font-Hosting geprüft
+
+Nutzerwunsch: rechtliche Absicherung gegen Abmahnungen (u.a. das bekannte deutsche Google-Fonts-Abmahnthema) — Muster-Impressum, Datenschutzerklärung, Fonts selbst hosten statt extern laden.
+
+**Font-Check zuerst (bevor irgendwas umgebaut wurde):** Geprüft, ob überhaupt externe Fonts geladen werden (`index.html`, alle CSS-Dateien durchsucht) — Ergebnis: **nein**, es werden ausschließlich System-Schriftarten verwendet (`system-ui, 'Segoe UI', Roboto, sans-serif` als Fallback-Kette, siehe `frontend/src/index.css`). Kein Google-Fonts-Abmahnrisiko vorhanden, kein Umbau nötig — bewusst nichts "repariert", was nicht kaputt war.
+
+**Neue Seiten `/impressum` und `/datenschutz`:**
+- `ImpressumPage.tsx`: Muster-Impressum nach § 5 TMG mit klar sichtbaren `[Platzhalter]` für Name/Adresse/Kontakt — bewusst NICHT mit erfundenen Daten gefüllt (kann/darf ich nicht wissen, und ein falsch ausgefülltes Impressum ist selbst ein häufiger Abmahngrund). Deutlich sichtbarer Warnhinweis oben auf der Seite, dass die Platzhalter vor echtem Betrieb ausgefüllt werden müssen.
+- `DatenschutzPage.tsx`: Datenschutzerklärung, inhaltlich auf die tatsächliche Architektur zugeschnitten statt generisches Boilerplate — beschreibt konkret Supabase Auth (Registrierung), hochgeladene Inhalte/Chatverlauf (Supabase DB+Storage), Google Gemini API als Auftragsverarbeiter mit Drittlandtransfer-Hinweis (USA), Hosting bei Render/Cloudflare, Sentry-Fehler-Tracking (mit dem Hinweis auf EU-Rechenzentrum Frankfurt und die bewusst datensparsame `set_user`-Zuordnung aus Phase 5), UptimeRobot, `localStorage`-Nutzung ohne Cookie-Consent-Pflicht (rein technisch notwendig), sowie die Standard-Betroffenenrechte nach DSGVO. Auch hier ein deutlicher Hinweis oben, dass das ein Entwurf/Vorlage ist und keine Rechtsberatung ersetzt.
+- Neue `AppFooter.tsx`-Komponente mit Links zu beiden Seiten, in `App.tsx` einmal zentral eingebunden (Sibling zu `<Routes>`) statt in jeder Page einzeln — erscheint dadurch automatisch auf jeder Seite, auch ohne Login (gesetzlich gefordert: Impressum muss ohne Hürden erreichbar sein).
+- CSS mobile-first ergänzt (`.legal-page`, `.legal-warning`, `.app-footer` in `App.css`), passend zu den bestehenden Farb-Variablen/Konventionen.
+
+**Verifikation:** `npm run lint`/`npm run build` sauber, live im Browser geprüft (lokaler Dev-Server) — beide Seiten rendern korrekt, sind ohne Login erreichbar (nach `signOut()` erneut aufgerufen, funktioniert weiterhin), Footer erscheint konsistent.
+
+**Ergebnis:** Rechtlich sinnvolle Grundabsicherung vorhanden, aber ausdrücklich als Entwurf markiert — die Platzhalter-Daten müssen vor echtem Live-Betrieb mit echten Nutzer:innen durch echte Angaben ersetzt werden, und beide Texte sollten im Zweifel fachlich gegengelesen werden.
