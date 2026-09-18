@@ -549,4 +549,4 @@ Echter Sentry-Account angelegt (Backend-Projekt "FastAPI", Frontend-Projekt "Rea
 
 **Finale Verifikation:** Alle 5 Tests grün gegen die echte Staging-URL (inkl. Lauf ohne Credentials → sauberer Skip statt Fehlschlag, wie vorgesehen).
 
-**Ergebnis:** Phase 5 (DevOps-Ausbau) ist damit inhaltlich abgeschlossen — Sentry (Error-Tracking + Performance-Tracing + Nutzer-Zuordnung), externes Uptime-Monitoring, und ein E2E-Test, der wirklich die komplette Staging-Kette verifiziert, statt nur oberflächlich UI zu prüfen. Offen bleiben nur noch die zwei GitHub-Secrets (`E2E_TEST_USER_EMAIL`, `E2E_TEST_USER_PASSWORD`) und ein Commit/Push.
+**Ergebnis:** Phase 5 (DevOps-Ausbau) ist damit vollständig abgeschlossen — Sentry (Error-Tracking + Performance-Tracing + Nutzer-Zuordnung), externes Uptime-Monitoring, und ein E2E-Test, der wirklich die komplette Staging-Kette verifiziert, statt nur oberflächlich UI zu prüfen. Nach dem Commit/Push (Freigabe erhalten) die beiden GitHub-Secrets angelegt (`E2E_TEST_USER_EMAIL`, `E2E_TEST_USER_PASSWORD`) und den Workflow manuell in echtem GitHub Actions ausgelöst — lief grün durch, nicht nur bei lokaler Verifikation.
