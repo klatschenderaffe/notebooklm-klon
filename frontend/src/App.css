@@ -379,14 +379,23 @@
   background: var(--bg);
 }
 
+.chat-panel-slot {
+  min-width: 0;
+}
+
 .chat-panel {
   display: flex;
   flex-direction: column;
   min-height: 420px;
+  max-height: 70vh;
 }
 
 .chat-messages {
   flex: 1;
+  /* Ohne min-height: 0 würde dieses Flex-Kind nie kleiner als sein Inhalt werden --
+     genau das verhindert sonst das interne Scrollen und lässt stattdessen die ganze
+     Seite wachsen. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -623,6 +632,19 @@ form button[type='submit']:disabled {
     grid-template-columns: minmax(280px, 380px) 1fr;
     gap: 24px;
     align-items: start;
+  }
+
+  .chat-panel {
+    /* Höhe kommt jetzt von NotebookPage.tsx per ResizeObserver (misst die tatsächliche
+       Höhe der linken Spalte) -- reines CSS kann "an der Höhe eines Geschwister-Elements
+       ausrichten" UND "eigenen, potenziell viel längeren Inhalt intern daran deckeln"
+       nicht gleichzeitig, wenn dessen Höhe selbst wieder vom Inhalt abhängt (die
+       automatische Grid-/Flex-Zeilenhöhe würde sonst durch die ungekürzte
+       Nachrichtenliste mit aufgebläht). Fallback auf die mobile Höhe, falls die
+       Variable (noch) nicht gesetzt ist.
+     */
+    max-height: none;
+    height: var(--chat-panel-match-height, 420px);
   }
 
   .layout-column {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import ChatPanel from '../components/ChatPanel'
@@ -13,6 +13,23 @@ function NotebookPage() {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [presentationRefreshKey, setPresentationRefreshKey] = useState(0)
+  const leftColumnRef = useRef<HTMLDivElement>(null)
+  const [leftColumnHeight, setLeftColumnHeight] = useState<number | null>(null)
+
+  // Reines CSS kann die Höhe der linken Spalte nicht gleichzeitig als Vorgabe UND als
+  // Obergrenze für das (potenziell viel längere) Chat-Panel nutzen -- ein Grid-Element
+  // mit unbegrenztem eigenen Inhalt bläht die automatische Zeilenhöhe trotz
+  // min-height:0/overflow:hidden auf. Deshalb wird die Höhe hier gemessen und per
+  // CSS-Variable an das Chat-Panel weitergereicht (siehe .chat-panel in App.css).
+  useEffect(() => {
+    const el = leftColumnRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      setLeftColumnHeight(entries[0].contentRect.height)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   const refreshSources = useCallback(() => {
     if (!notebookId) return
@@ -55,7 +72,7 @@ function NotebookPage() {
         </Link>
         {loadError && <p className="error-text banner">{loadError}</p>}
         <div className="layout">
-          <div className="layout-column">
+          <div className="layout-column" ref={leftColumnRef}>
             <SourcesPanel
               notebookId={notebookId}
               sources={sources}
@@ -74,7 +91,16 @@ function NotebookPage() {
               refreshKey={presentationRefreshKey}
             />
           </div>
-          <ChatPanel notebookId={notebookId} hasSources={sources.length > 0} />
+          <div
+            className="chat-panel-slot"
+            style={
+              leftColumnHeight
+                ? ({ '--chat-panel-match-height': `${leftColumnHeight}px` } as React.CSSProperties)
+                : undefined
+            }
+          >
+            <ChatPanel notebookId={notebookId} hasSources={sources.length > 0} />
+          </div>
         </div>
       </main>
     </>
