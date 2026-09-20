@@ -48,20 +48,6 @@ def embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
     return [list(embedding.values or []) for embedding in response.embeddings or []]
 
 
-def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
-    response = get_client().models.generate_content(
-        model=settings.gemini_chat_model,
-        contents=cast(
-            Any,
-            [
-                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                "Transkribiere den gesprochenen Inhalt dieser Audiodatei vollständig und wörtlich.",
-            ],
-        ),
-    )
-    return response.text or ""
-
-
 def generate_answer(question: str, context_chunks: list[str]) -> str:
     context = "\n\n---\n\n".join(context_chunks) if context_chunks else "(keine Quellen gefunden)"
     prompt = f"Quellenausschnitte:\n\n{context}\n\nFrage: {question}"

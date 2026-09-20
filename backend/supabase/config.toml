@@ -125,12 +125,6 @@ allowed_mime_types = [
   "text/markdown",
   "text/x-markdown",
   "text/plain",
-  "audio/mpeg",
-  "audio/wav",
-  "audio/x-wav",
-  "audio/mp4",
-  "audio/x-m4a",
-  "audio/ogg",
 ]
 
 # Uncomment to configure local storage buckets

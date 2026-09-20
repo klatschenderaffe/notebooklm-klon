@@ -19,6 +19,17 @@ def test_upload_source_rejects_unsupported_type(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_upload_source_rejects_audio_file(client: TestClient) -> None:
+    """Audio-Uploads wurden entfernt (früher via Gemini-Transkription unterstützt) —
+    sie müssen jetzt wie jeder andere nicht unterstützte Dateityp klar abgelehnt werden,
+    statt still transkribiert zu werden."""
+    response = client.post(
+        BASE,
+        files={"file": ("aufnahme.wav", io.BytesIO(b"RIFF...fake-wav-bytes"), "audio/wav")},
+    )
+    assert response.status_code == 422
+
+
 def test_upload_source_success(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sources_router, "embed_texts", lambda chunks, task_type: [[0.1, 0.2] for _ in chunks]
@@ -212,57 +223,3 @@ def test_add_url_source_extraction_failure_returns_422(
     assert response.status_code == 422
 
 
-def test_add_youtube_source_success(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    _stub_ingest(monkeypatch)
-    monkeypatch.setattr(
-        sources_router,
-        "extract_youtube_transcript",
-        lambda url: ("YouTube-Video abc123", "Transkribierter Text."),
-    )
-
-    response = client.post(
-        f"{BASE}/youtube", json={"url": "https://www.youtube.com/watch?v=abc123"}
-    )
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["filename"] == "YouTube-Video abc123"
-    assert body["file_type"] == "youtube"
-
-
-def test_add_youtube_source_extraction_failure_returns_422(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from app.services.youtube_extraction import YoutubeExtractionError
-
-    def raise_error(url: str) -> tuple[str, str]:
-        raise YoutubeExtractionError("Kein Transkript verfügbar")
-
-    monkeypatch.setattr(sources_router, "extract_youtube_transcript", raise_error)
-
-    response = client.post(f"{BASE}/youtube", json={"url": "https://www.youtube.com/watch?v=x"})
-
-    assert response.status_code == 422
-
-
-def test_upload_audio_source_transcribes_via_gemini(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _stub_ingest(monkeypatch)
-    received_mime_types = []
-
-    def fake_transcribe(audio_bytes: bytes, mime_type: str) -> str:
-        received_mime_types.append(mime_type)
-        return "Transkribierter gesprochener Text."
-
-    monkeypatch.setattr(sources_router, "transcribe_audio", fake_transcribe)
-
-    response = client.post(
-        BASE,
-        files={"file": ("aufnahme.wav", io.BytesIO(b"RIFF...fake-wav-bytes"), "audio/wav")},
-    )
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["file_type"] == "audio"
-    assert received_mime_types == ["audio/wav"]

@@ -29,9 +29,8 @@ function DatenschutzPage() {
           <h3>2. Was diese App macht</h3>
           <p>
             NotebookLM-Klon ermöglicht es angemeldeten Nutzer:innen, eigene Quellen (PDF, Markdown,
-            Webseiten, YouTube-Videos, Audiodateien) in "Notebooks" zu sammeln, dazu per Chat
-            Fragen zu stellen und Präsentationen erstellen zu lassen. Dafür ist zwingend ein
-            Nutzerkonto erforderlich.
+            Webseiten) in "Notebooks" zu sammeln, dazu per Chat Fragen zu stellen und
+            Präsentationen erstellen zu lassen. Dafür ist zwingend ein Nutzerkonto erforderlich.
           </p>
 
           <h3>3. Registrierung und Anmeldung</h3>
@@ -47,7 +46,7 @@ function DatenschutzPage() {
           <h3>4. Von dir hochgeladene Inhalte</h3>
           <p>
             Alle Inhalte, die du in einem Notebook anlegst — hochgeladene Dateien, eingegebene
-            URLs/YouTube-Links, daraus extrahierter Text, deine Chat-Fragen und die generierten
+            URLs, daraus extrahierter Text, deine Chat-Fragen und die generierten
             Antworten samt Zitaten, eigene Notizen sowie erzeugte Präsentationen — werden in
             unserer Datenbank und unserem Datei-Speicher bei <strong>Supabase</strong> gespeichert,
             ausschließlich sichtbar für dein eigenes Konto (technisch u.a. über

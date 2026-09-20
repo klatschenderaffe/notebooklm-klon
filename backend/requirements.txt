@@ -8,5 +8,4 @@ pypdf==6.19.0
 python-pptx==1.0.2
 pyjwt==2.14.0
 trafilatura==2.2.0
-youtube-transcript-api==1.2.4
 sentry-sdk[fastapi]==2.69.2

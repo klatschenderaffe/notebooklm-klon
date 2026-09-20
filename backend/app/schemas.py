@@ -26,10 +26,6 @@ class UrlSourceRequest(BaseModel):
     url: str
 
 
-class YoutubeSourceRequest(BaseModel):
-    url: str
-
-
 class ChatRequest(BaseModel):
     question: str
 

@@ -3,7 +3,6 @@ import type { Note, Source } from '../api'
 import {
   addNote,
   addUrlSource,
-  addYoutubeSource,
   deleteNote,
   deleteSource,
   listNotes,
@@ -22,8 +21,6 @@ const TYPE_LABELS: Record<Source['file_type'], string> = {
   pdf: 'PDF',
   md: 'MD',
   url: 'URL',
-  youtube: 'YT',
-  audio: 'Audio',
 }
 
 interface SourceNotesProps {
@@ -137,8 +134,6 @@ function SourcesPanel({
 
   const [urlValue, setUrlValue] = useState('')
   const [isAddingUrl, setIsAddingUrl] = useState(false)
-  const [youtubeValue, setYoutubeValue] = useState('')
-  const [isAddingYoutube, setIsAddingYoutube] = useState(false)
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
 
   async function handleFiles(files: FileList | null) {
@@ -176,26 +171,6 @@ function SourcesPanel({
     }
   }
 
-  async function handleAddYoutube(e: React.FormEvent) {
-    e.preventDefault()
-    const trimmed = youtubeValue.trim()
-    if (!trimmed || isAddingYoutube) return
-
-    setError(null)
-    setIsAddingYoutube(true)
-    try {
-      await addYoutubeSource(notebookId, trimmed)
-      setYoutubeValue('')
-      onSourcesChange()
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'YouTube-Transkript konnte nicht abgerufen werden'
-      )
-    } finally {
-      setIsAddingYoutube(false)
-    }
-  }
-
   async function handleDelete(id: string) {
     try {
       await deleteSource(notebookId, id)
@@ -220,15 +195,14 @@ function SourcesPanel({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.md,.markdown,.mp3,.wav,.m4a,.ogg"
+          accept=".pdf,.md,.markdown"
           onChange={(e) => handleFiles(e.target.files)}
           hidden
         />
         {isUploading ? 'Wird hochgeladen …' : 'Datei hierher ziehen oder klicken'}
       </label>
       <p className="filetypes">
-        Unterstützte Dateitypen: <code>.pdf</code> <code>.md</code> <code>.mp3</code>{' '}
-        <code>.wav</code> <code>.m4a</code> <code>.ogg</code>
+        Unterstützte Dateitypen: <code>.pdf</code> <code>.md</code>
       </p>
 
       <form className="chat-input-row source-add-form" onSubmit={handleAddUrl}>
@@ -241,19 +215,6 @@ function SourcesPanel({
         />
         <button type="submit" disabled={isAddingUrl || !urlValue.trim()}>
           {isAddingUrl ? '…' : '+'}
-        </button>
-      </form>
-
-      <form className="chat-input-row source-add-form" onSubmit={handleAddYoutube}>
-        <input
-          type="text"
-          value={youtubeValue}
-          onChange={(e) => setYoutubeValue(e.target.value)}
-          placeholder="YouTube-Link einfügen …"
-          disabled={isAddingYoutube}
-        />
-        <button type="submit" disabled={isAddingYoutube || !youtubeValue.trim()}>
-          {isAddingYoutube ? '…' : '+'}
         </button>
       </form>
 
