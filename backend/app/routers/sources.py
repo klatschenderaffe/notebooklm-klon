@@ -5,19 +5,17 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 
 from app.auth import get_current_user_id
 from app.config import settings
-from app.schemas import SourceOut, UrlSourceRequest, YoutubeSourceRequest
+from app.schemas import SourceOut, UrlSourceRequest
 from app.services import storage, vector_store
 from app.services.chunking import chunk_text
-from app.services.gemini_client import embed_texts, transcribe_audio
+from app.services.gemini_client import embed_texts
 from app.services.notebooks_store import require_owned_notebook_id
 from app.services.text_extraction import (
     UnsupportedFileTypeError,
-    audio_mime_type_from_filename,
     extract_text,
     file_type_from_filename,
 )
 from app.services.web_extraction import UrlExtractionError, extract_url_content
-from app.services.youtube_extraction import YoutubeExtractionError, extract_youtube_transcript
 
 router = APIRouter(prefix="/notebooks/{notebook_id}/sources", tags=["sources"])
 logger = logging.getLogger(__name__)
@@ -31,7 +29,7 @@ def _ingest_source(
     raw_content: bytes,
     text: str,
 ) -> dict:
-    """Gemeinsame Pipeline für alle Quellentypen (Datei-Upload, URL, YouTube, Audio):
+    """Gemeinsame Pipeline für alle Quellentypen (Datei-Upload, URL):
     chunken, einbetten, Original-Content im Storage ablegen, DB-Einträge anlegen.
 
     Supabase bietet keine Mehrtabellen-Transaktion über den REST-Client, daher wird
@@ -91,11 +89,7 @@ async def upload_source(
     if len(content) > settings.max_upload_size_bytes:
         raise HTTPException(status_code=413, detail="Datei zu groß")
 
-    if file_type == "audio":
-        mime_type = audio_mime_type_from_filename(file.filename)
-        text = transcribe_audio(content, mime_type)
-    else:
-        text = extract_text(file.filename, content)
+    text = extract_text(file.filename, content)
 
     return _ingest_source(user_id, notebook_id, file.filename, file_type, content, text)
 
@@ -112,20 +106,6 @@ def add_url_source(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return _ingest_source(user_id, notebook_id, title, "url", text.encode("utf-8"), text)
-
-
-@router.post("/youtube", response_model=SourceOut, status_code=201)
-def add_youtube_source(
-    request: YoutubeSourceRequest,
-    notebook_id: str = Depends(require_owned_notebook_id),
-    user_id: str = Depends(get_current_user_id),
-) -> dict:
-    try:
-        title, text = extract_youtube_transcript(request.url)
-    except YoutubeExtractionError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    return _ingest_source(user_id, notebook_id, title, "youtube", text.encode("utf-8"), text)
 
 
 @router.delete("/{source_id}", status_code=204)

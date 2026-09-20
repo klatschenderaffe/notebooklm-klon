@@ -36,9 +36,13 @@ class Settings(BaseSettings):
     # Mindest-Kosinus-Ähnlichkeit (0-1), ab der ein Chunk als relevant genug gilt, um als
     # Chat-Kontext/Zitat verwendet zu werden. match_chunks liefert sonst immer bis zu
     # match_count Treffer zurück, auch wenn kein einziger davon thematisch passt (z.B. bei
-    # wenigen Quellen im Notebook) — kalibriert an echten Testdaten: ein tatsächlich
-    # relevanter Chunk lag bei ~0.81, ein komplett themenfremder bei ~0.53.
-    chat_similarity_threshold: float = 0.6
+    # wenigen Quellen im Notebook). Ursprünglich an einem einzigen Beispielpaar auf 0.6
+    # kalibriert (relevant ~0.81, themenfremd ~0.53) — mit mehr echten Testdaten (Frage zu
+    # "Wombats" bei einer zusätzlichen "Quokka"-Wikipedia-Quelle im selben Notebook) zeigte
+    # sich, dass thematisch verwandte, aber inhaltlich irrelevante Treffer (beides
+    # australische Beuteltiere) auf 0.62-0.67 kommen können, oberhalb der alten Schwelle.
+    # Auf 0.7 angehoben, da der tatsächlich relevante Treffer in diesem Test bei 0.77 lag.
+    chat_similarity_threshold: float = 0.7
 
     # Sentry Error-Tracking (Phase 5, DevOps-Hardening). Bei leerem DSN (Standard, z.B.
     # lokale Entwicklung ohne Sentry-Account) wird Sentry gar nicht erst initialisiert —
