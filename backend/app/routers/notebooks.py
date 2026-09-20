@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.auth import get_current_user_id
+from app.rate_limit import limiter
 from app.schemas import NotebookCreate, NotebookOut, NotebookUpdate
 from app.services import notebooks_store, storage
 
@@ -27,7 +28,16 @@ def rename_notebook(
 
 
 @router.delete("/{notebook_id}", status_code=204)
-def delete_notebook(notebook_id: str, user_id: str = Depends(get_current_user_id)) -> None:
+# 20/Minute: einziger mengenmäßig unbegrenzte Server-Loop im Projekt ohne eigenes
+# Limit -- iteriert über alle Source-/Präsentations-Storage-Pfade des Notebooks und
+# macht dafür je einen synchronen Supabase-Storage-Call. Kein Gemini-Kontingent-Risiko
+# wie bei chat/sources (siehe app/rate_limit.py), aber ein Nutzer könnte sonst beliebig
+# oft große Notebooks anlegen und wieder löschen, um diese teure Operation zu
+# wiederholen. Großzügig genug, da normales Notebook-Löschen kein Problem sein soll.
+@limiter.limit("20/minute")
+def delete_notebook(
+    request: Request, notebook_id: str, user_id: str = Depends(get_current_user_id)
+) -> None:
     notebooks_store.get_owned_notebook(user_id, notebook_id)
     for path in notebooks_store.list_source_storage_paths(notebook_id):
         storage.delete_source_file(path)

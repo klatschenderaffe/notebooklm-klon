@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.config import settings
+from app.rate_limit import limiter
 from app.schemas import ChatCitation, ChatMessageOut, ChatRequest, ChatResponse
 from app.services import history_store, vector_store
 from app.services.gemini_client import embed_texts, generate_answer
@@ -15,16 +16,23 @@ def get_chat_history(notebook_id: str = Depends(require_owned_notebook_id)) -> l
 
 
 @router.post("/chat", response_model=ChatResponse)
+# 10/Minute: teuerster Endpunkt (Embedding-Call + Gemini-Chat-Call pro Anfrage) auf
+# einem geteilten API-Key -- siehe app/rate_limit.py. Großzügig genug für eine normale
+# Chat-Konversation, eng genug um eine Endlosschleife (Bug oder Missbrauch) wirksam zu
+# bremsen, bevor sie das Kontingent für alle Nutzer erschöpft.
+@limiter.limit("10/minute")
 def chat(
-    request: ChatRequest, notebook_id: str = Depends(require_owned_notebook_id)
+    request: Request,
+    chat_request: ChatRequest,
+    notebook_id: str = Depends(require_owned_notebook_id),
 ) -> ChatResponse:
-    history_store.insert_chat_message(notebook_id, "user", request.question, [])
+    history_store.insert_chat_message(notebook_id, "user", chat_request.question, [])
 
-    [query_embedding] = embed_texts([request.question], task_type="RETRIEVAL_QUERY")
+    [query_embedding] = embed_texts([chat_request.question], task_type="RETRIEVAL_QUERY")
     all_matches = vector_store.similarity_search(notebook_id, query_embedding)
     matches = [m for m in all_matches if m["similarity"] >= settings.chat_similarity_threshold]
 
-    answer = generate_answer(request.question, [match["content"] for match in matches])
+    answer = generate_answer(chat_request.question, [match["content"] for match in matches])
     citations = [
         ChatCitation(filename=match["filename"], excerpt=match["content"][:280])
         for match in matches

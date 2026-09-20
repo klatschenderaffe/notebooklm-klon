@@ -73,6 +73,36 @@ def test_upload_source_file_sets_content_type_for_url(
     assert bucket.upload_calls[0][2] == {"content-type": "text/markdown"}
 
 
+@pytest.mark.parametrize(
+    ("malicious_filename", "expected"),
+    [
+        ("../../../etc/passwd", "passwd"),
+        ("..\\..\\..\\windows\\win.ini", "win.ini"),
+        ("/etc/passwd", "passwd"),
+        ("....//....//etc/passwd", "passwd"),
+        ("...", "datei"),
+        ("..", "datei"),
+        (".hidden", "hidden"),
+        ("   ", "datei"),
+        ("..   ", "datei"),
+    ],
+)
+def test_upload_source_file_sanitizes_path_traversal_filenames(
+    monkeypatch: pytest.MonkeyPatch, malicious_filename: str, expected: str
+) -> None:
+    bucket = _FakeBucket()
+    monkeypatch.setattr(storage_module, "get_client", lambda: _FakeClient(bucket))
+
+    storage_module.upload_source_file(
+        "user-1", "notebook-1", "source-1", malicious_filename, b"data", "md"
+    )
+
+    [(path, _content, _file_options)] = bucket.upload_calls
+    assert path == f"user-1/notebook-1/source-1/{expected}"
+    assert "/etc/" not in path
+    assert ".." not in path
+
+
 def test_delete_source_file_removes_by_path(monkeypatch: pytest.MonkeyPatch) -> None:
     bucket = _FakeBucket()
     monkeypatch.setattr(storage_module, "get_client", lambda: _FakeClient(bucket))

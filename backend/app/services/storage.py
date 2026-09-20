@@ -1,3 +1,6 @@
+import ntpath
+import posixpath
+
 from app.config import settings
 from app.services.supabase_client import get_client
 
@@ -9,10 +12,41 @@ CONTENT_TYPES = {
 }
 
 
+def _sanitize_filename(filename: str) -> str:
+    """Entfernt aus einem client-gelieferten Dateinamen alles, was ihn zu einem
+    Pfad-Bestandteil statt eines reinen Dateinamens machen würde, BEVOR er in den
+    Storage-Pfad eingebaut wird.
+
+    filename kommt direkt vom Client (UploadFile.filename bzw. der extrahierte
+    URL-Titel) und wird ungeprüft in f"{user_id}/{notebook_id}/{source_id}/{filename}"
+    eingesetzt. Ohne diese Bereinigung könnte ein Dateiname wie "../../../etc/passwd"
+    oder "..\\..\\config" den Storage-Pfad verlassen (Path Traversal). posixpath.basename
+    UND ntpath.basename werden beide angewendet, da Supabase Storage selbst nur "/" als
+    Trenner kennt, ein Client aber auch rückwärtsgerichtete Windows-Backslashes senden
+    könnte, die sonst als normale Zeichen im "Dateinamen" landen würden. Null-Bytes
+    werden separat entfernt, da sie in Dateinamen ohnehin nie sinnvoll sind und in
+    manchen darunterliegenden C-Bibliotheken Strings vorzeitig abschneiden können.
+    """
+    cleaned = filename.replace("\x00", "")
+    cleaned = ntpath.basename(cleaned)
+    cleaned = posixpath.basename(cleaned)
+    # Führende Punkte (".", "..", "...") ergeben nach basename() zwar keinen
+    # Verzeichnis-Anteil mehr, könnten aber z.B. versteckte Dateien erzeugen oder als
+    # "." bzw. ".." komplett leer wirken -- daher zusätzlich entfernen.
+    cleaned = cleaned.lstrip(".")
+    # Ein Dateiname, der nur aus Leerzeichen besteht (z.B. "   " oder "  .pdf", das nach
+    # dem Punkt-Stripping zu "  " würde), ist als Storage-Pfad-Segment technisch nicht
+    # leer, aber praktisch unbrauchbar -- daher vor der Leerheitsprüfung strippen, damit
+    # auch solche Fälle auf den "datei"-Fallback treffen.
+    cleaned = cleaned.strip()
+    return cleaned or "datei"
+
+
 def upload_source_file(
     user_id: str, notebook_id: str, source_id: str, filename: str, content: bytes, file_type: str
 ) -> str:
-    storage_path = f"{user_id}/{notebook_id}/{source_id}/{filename}"
+    safe_filename = _sanitize_filename(filename)
+    storage_path = f"{user_id}/{notebook_id}/{source_id}/{safe_filename}"
     content_type = CONTENT_TYPES[file_type]
     get_client().storage.from_(settings.supabase_storage_bucket).upload(
         storage_path, content, file_options={"content-type": content_type}

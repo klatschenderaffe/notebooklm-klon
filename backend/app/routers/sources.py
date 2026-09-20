@@ -1,10 +1,11 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 
 from app.auth import get_current_user_id
 from app.config import settings
+from app.rate_limit import limiter
 from app.schemas import SourceOut, UrlSourceRequest
 from app.services import storage, vector_store
 from app.services.chunking import chunk_text
@@ -72,7 +73,12 @@ def list_sources(notebook_id: str = Depends(require_owned_notebook_id)) -> list[
 
 
 @router.post("", response_model=SourceOut, status_code=201)
+# 10/Minute: Datei-Uploads lösen Chunking + Embedding-Calls auf dem geteilten
+# Gemini-Key aus (siehe app/rate_limit.py) -- großzügig genug für normales Hochladen
+# mehrerer Quellen hintereinander, eng genug gegen eine Upload-Flood.
+@limiter.limit("10/minute")
 async def upload_source(
+    request: Request,
     file: UploadFile,
     notebook_id: str = Depends(require_owned_notebook_id),
     user_id: str = Depends(get_current_user_id),
@@ -95,13 +101,17 @@ async def upload_source(
 
 
 @router.post("/url", response_model=SourceOut, status_code=201)
+# 10/Minute: löst wie Datei-Uploads Chunking + Embedding-Calls aus, zusätzlich noch
+# einen Server-seitigen HTTP-Abruf der Ziel-URL -- siehe app/rate_limit.py.
+@limiter.limit("10/minute")
 def add_url_source(
-    request: UrlSourceRequest,
+    request: Request,
+    url_request: UrlSourceRequest,
     notebook_id: str = Depends(require_owned_notebook_id),
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
     try:
-        title, text = extract_url_content(request.url)
+        title, text = extract_url_content(url_request.url)
     except UrlExtractionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

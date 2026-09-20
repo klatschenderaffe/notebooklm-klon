@@ -4,10 +4,12 @@ import sentry_sdk
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from app.config import settings
+from app.rate_limit import limiter
 from app.routers import chat, health, notebooks, notes, presentations, sources
 
 logger = logging.getLogger(__name__)
@@ -88,6 +90,41 @@ _init_sentry()
 
 app = FastAPI(title="NotebookLM-Klon API")
 
+
+def _handle_rate_limit_exceeded(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """Eigener 429-Handler statt slowapis `_rate_limit_exceeded_handler`-Default.
+
+    Der slowapi-Default liefert `{"error": "Rate limit exceeded: ..."}` -- das Frontend
+    (siehe frontend/src/api.ts, parseErrorMessage) liest bei Fehlerantworten aber
+    ausschließlich das Feld `detail` (wie bei jedem anderen HTTPException-basierten
+    Fehler in diesem Backend) und fällt sonst auf die rohe HTTP-Statustext-Meldung
+    zurück. Ohne diesen eigenen Handler sähen Nutzer bei jedem 429 die unübersetzte
+    Meldung "Too Many Requests" statt eines verständlichen deutschen Hinweises.
+    """
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Zu viele Anfragen. Bitte warte kurz und versuche es erneut."},
+    )
+
+# app.state.limiter wird von slowapi intern gelesen (siehe slowapi/extension.py), und
+# von den @limiter.limit(...)-Decorators auf den einzelnen Router-Endpunkten verwendet
+# (siehe app/rate_limit.py für die Begründung des In-Memory-Limiters und den
+# Rate-Limit-Key). RateLimitExceeded ist eine starlette.exceptions.HTTPException-
+# Unterklasse und wird deshalb -- genau wie ein normales `raise HTTPException(...)` in
+# einem Endpunkt -- von Starlettes ExceptionMiddleware behandelt, welche INNERHALB
+# dieser add_middleware-Aufrufe liegt. Der 429-Response erreicht
+# CatchAllExceptionsMiddleware also nie als unbehandelte Exception und wird nicht
+# fälschlich zu einem generischen 500 (siehe tests/test_rate_limit.py für den Nachweis).
+app.state.limiter = limiter
+# Eigener Handler statt slowapis Default (_rate_limit_exceeded_handler) -- siehe
+# Begründung in _handle_rate_limit_exceeded() oben. Der Ignore-Kommentar unten bleibt
+# trotzdem nötig, aber aus einem saubereren Grund als beim slowapi-Default: FastAPIs
+# add_exception_handler() erwartet einen Handler, der generisch auf `Exception`
+# typisiert ist, während unser Handler bewusst eng auf `RateLimitExceeded` typisiert
+# ist (mehr Typsicherheit innerhalb der Funktion selbst). Laufzeitverhalten ist davon
+# unberührt -- siehe tests/test_rate_limit.py für den Nachweis.
+app.add_exception_handler(RateLimitExceeded, _handle_rate_limit_exceeded)  # type: ignore[arg-type]
+
 app.add_middleware(CatchAllExceptionsMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -95,6 +132,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Wichtig: CORS schützt NUR Browser-JavaScript, das von einer fremden Origin aus
+# Requests an dieses Backend schickt (der Browser blockt dort die Response für das
+# aufrufende JS, falls die Origin nicht erlaubt ist). Ein direkter Server-zu-Server-
+# oder curl/Skript-Request wird von CORS überhaupt nicht eingeschränkt -- Browser sind
+# die einzige Stelle, die CORS-Header auswertet. Der eigentliche Zugriffsschutz ist
+# deshalb die JWT-Pflicht auf den meisten Endpunkten (siehe app/auth.py), nicht CORS.
 
 app.include_router(health.router)
 app.include_router(notebooks.router)
