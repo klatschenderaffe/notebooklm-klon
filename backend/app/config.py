@@ -15,24 +15,25 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     gemini_api_key: str = ""
-    # gemini-3.6-flash (vorheriger Standard) lieferte am 21.09. wiederholt 503 "high
-    # demand" -- live gegen mehrere Kandidaten getestet (nicht nur Doku/Modell-Liste
-    # geglaubt): gemini-2.5-flash 404 (für diesen Account nicht verfügbar, bekannt seit
-    # Projektbeginn), gemini-flash-latest ebenfalls 503, gemini-3.5-flash UND
-    # gemini-3.7-flash beide erfolgreich. gemini-3.7-flash gewählt als der neuere,
-    # aktuell stabil funktionierende Kandidat. Modellverfügbarkeit ändert sich laut
-    # bisheriger Projekterfahrung im Wochen-Takt -- bei erneuten 503ern hier zuerst
-    # nachsehen, welches Modell gerade lebt.
-    gemini_chat_model: str = "gemini-3.7-flash"
-    # Live beobachtet (21.09., ca. eine Stunde nach dem Wechsel auf gemini-3.7-flash):
-    # auch dieses Modell geriet in Googles "high demand"-Zustand (503), genau wie
-    # zuvor gemini-3.6-flash -- Kapazitätsengpässe werden offenbar pro Modell separat
-    # verwaltet und können unabhängig voneinander auftreten. Ein reiner Retry auf
-    # demselben Modell (siehe _call_with_retry) hilft nur bei kurzen Spitzen; hält die
-    # Überlastung länger an, weicht generate_answer/generate_presentation_outline
-    # zusätzlich auf dieses zweite, unabhängige Modell aus (siehe
-    # _generate_content_with_fallback in gemini_client.py). gemini-3.5-flash lief am
-    # selben Tag live stabil, als gemini-3.6-flash bereits 503'te.
+    # Am 21.09. mehrfach durchgetauscht, nachdem am selben Tag nacheinander
+    # gemini-3.6-flash (503 "high demand" + Tages-Kontingent erschöpft),
+    # gemini-3.7-flash (ebenfalls Tages-Kontingent erschöpft) und zeitweise auch
+    # gemini-3.5-flash/gemini-3.8-flash (503/504) betroffen waren -- laut Google
+    # (ai.google.dev/gemini-api/docs/rate-limits) resettet das Tages-Kontingent
+    # (RPD) um Mitternacht Pacific Time. Auf expliziten Nutzerwunsch zurück auf
+    # gemini-3.6-flash als Standard gestellt (war vor dem 21.09. tagelang stabil).
+    # Modellverfügbarkeit ändert sich laut bisheriger Projekterfahrung im
+    # Wochen-/Stunden-Takt -- bei erneuten 503ern/429ern hier zuerst nachsehen,
+    # welches Modell gerade lebt, statt blind erneut zu wechseln.
+    gemini_chat_model: str = "gemini-3.6-flash"
+    # Kapazitäts-/Kontingent-Engpässe werden von Google offenbar pro Modell separat
+    # verwaltet und treten unabhängig voneinander auf (am 21.09. nacheinander bei
+    # gemini-3.6-flash, gemini-3.7-flash, zeitweise auch gemini-3.5-flash und
+    # gemini-3.8-flash beobachtet) -- generate_answer/generate_presentation_outline
+    # weichen deshalb bei einem ServerError/Timeout oder einem 429-Tages-Kontingent
+    # auf dieses zweite, unabhängige Modell aus (siehe _generate_content_with_fallback
+    # in gemini_client.py). Bewusst KEIN Retry auf demselben Modell mehr (siehe dort)
+    # -- nur noch ein Versuch pro Modell, um die Gesamt-Wartezeit zu begrenzen.
     gemini_chat_model_fallback: str = "gemini-3.5-flash"
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_embedding_dimensions: int = 768
