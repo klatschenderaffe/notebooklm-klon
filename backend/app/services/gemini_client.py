@@ -1,5 +1,7 @@
 import json
 import logging
+import time
+from collections.abc import Callable
 from functools import lru_cache
 from typing import Any, cast
 
@@ -16,6 +18,23 @@ logger = logging.getLogger(__name__)
 GEMINI_UNAVAILABLE_DETAIL = (
     "KI-Service ist momentan nicht verfügbar. Bitte versuche es später erneut."
 )
+
+def _call_with_retry[T](fn: Callable[[], T], *, retry_delay_seconds: float = 1.5) -> T:
+    """Ruft `fn` auf und versucht es genau einmal erneut, falls Gemini mit einem
+    `ServerError` (5xx) antwortet -- live wiederholt beobachtete "high demand"-503er
+    sind laut Googles eigener Fehlermeldung ausdrücklich "usually temporary". Ein
+    einziger Retry mit kurzer Pause fängt genau diesen häufigsten Fall ab, ohne bei
+    einem echten, andauernden Ausfall spürbar Zeit zu verschwenden. `ClientError`
+    (4xx, z.B. ungültiger API-Key oder Kontingent dauerhaft aufgebraucht) wird bewusst
+    NICHT wiederholt -- ein erneuter Versuch würde dort nichts ändern."""
+    try:
+        return fn()
+    except genai_errors.ServerError as exc:
+        logger.warning(
+            "Gemini-ServerError, wiederhole einmal nach %.1fs: %s", retry_delay_seconds, exc
+        )
+        time.sleep(retry_delay_seconds)
+        return fn()
 
 SYSTEM_INSTRUCTION = (
     "Du bist ein Assistent, der ausschließlich auf Basis der bereitgestellten Quellenausschnitte "
@@ -46,13 +65,15 @@ def embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
     # unabhängige Dokumente batcht und N Embeddings zurückgibt (live mit 68 Chunks
     # verifiziert: 68 rein, 68 raus).
     contents = [types.Content(parts=[types.Part(text=t)]) for t in texts]
-    response = get_client().models.embed_content(
-        model=settings.gemini_embedding_model,
-        contents=cast(Any, contents),
-        config=types.EmbedContentConfig(
-            output_dimensionality=settings.gemini_embedding_dimensions,
-            task_type=task_type,
-        ),
+    response = _call_with_retry(
+        lambda: get_client().models.embed_content(
+            model=settings.gemini_embedding_model,
+            contents=cast(Any, contents),
+            config=types.EmbedContentConfig(
+                output_dimensionality=settings.gemini_embedding_dimensions,
+                task_type=task_type,
+            ),
+        )
     )
     return [list(embedding.values or []) for embedding in response.embeddings or []]
 
@@ -63,12 +84,16 @@ def generate_answer(question: str, context_chunks: list[str]) -> str:
     # Kontingent erschöpft oder Service down (live beobachtet: transiente 503 "high
     # demand"-Fehler, siehe PROGRESS.md) propagieren sonst ungefangen bis zum
     # generischen 500-Handler, statt dem Nutzer verständlich zu machen, dass es an der
-    # KI liegt und ein erneuter Versuch sinnvoll ist.
+    # KI liegt und ein erneuter Versuch sinnvoll ist. _call_with_retry versucht einen
+    # 5xx-Fehler zuerst automatisch einmal erneut (siehe dort), bevor überhaupt eine
+    # Fehlermeldung beim Nutzer ankommt.
     try:
-        response = get_client().models.generate_content(
-            model=settings.gemini_chat_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION),
+        response = _call_with_retry(
+            lambda: get_client().models.generate_content(
+                model=settings.gemini_chat_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION),
+            )
         )
     except genai_errors.APIError as exc:
         logger.warning("Gemini-API-Fehler bei generate_answer: %s", exc)
@@ -146,16 +171,18 @@ def generate_presentation_outline(
 
     # Gleiche Absicherung wie generate_answer() -- beide rufen dieselbe Art API auf und
     # sollen bei Kontingent-/Service-Fehlern konsistent mit 503 statt einem generischen
-    # 500 antworten.
+    # 500 antworten, inklusive des automatischen Einmal-Retries bei 5xx.
     try:
-        response = get_client().models.generate_content(
-            model=settings.gemini_chat_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=OUTLINE_INSTRUCTION,
-                response_mime_type="application/json",
-                response_schema=response_schema,
-            ),
+        response = _call_with_retry(
+            lambda: get_client().models.generate_content(
+                model=settings.gemini_chat_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=OUTLINE_INSTRUCTION,
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
+                ),
+            )
         )
     except genai_errors.APIError as exc:
         logger.warning("Gemini-API-Fehler bei generate_presentation_outline: %s", exc)
