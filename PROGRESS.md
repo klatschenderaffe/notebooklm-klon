@@ -831,3 +831,21 @@ Nachdem der Chat dank Timeout/Fallback wieder zuverlässig antwortete, meldete d
 **Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **137 Tests grün**. Die reale Datei erzeugt jetzt 8 saubere Chunks statt 23 (17 Fast-Duplikate weniger).
 
 **Ergebnis:** Zwei unabhängige, reale RAG-Bugs gefunden und behoben, keiner davon eine Gemini-Verfügbarkeitsfrage — ein Beleg dafür, dass sich "die KI kann die Antwort nicht finden" nicht automatisch auf einen KI-Anbieter-Ausfall zurückführen lässt, sondern die eigene Retrieval-Pipeline zuerst direkt (mit echten Daten, ohne Mocks) verifiziert werden sollte.
+
+---
+
+## 2026-09-21 — Live-Vorfall: roher 500 beim erneuten Hochladen derselben Quelle
+
+Nach dem RAG-Fix wurde die betroffene Quelle live neu hochgeladen, um den Fix zu greifen. Dabei traten direkt hintereinander zwei unterschiedliche Fehler auf — in Sentry statt geraten direkt nachvollzogen.
+
+**Fund 1 — neuer, unabhängiger Bug:** Der erste Upload-Versuch scheiterte mit einem rohen, ungefangenen `httpx.ReadTimeout` → **500 Internal Server Error**. Der vollständige Sentry-Stacktrace zeigt die genaue Stelle: `app/services/storage.py:65` in `upload_source_file` — der Supabase-**Storage**-Upload, nicht der Gemini-Call (das Embedding direkt davor war laut Breadcrumb bereits mit `200 OK` erfolgreich). **Root Cause:** Die Supabase-Python-Bibliothek setzt bereits standardmäßig ein Timeout (`ClientOptions.storage_client_timeout`, 20s) — dieses Timeout existierte also schon die ganze Zeit, wurde aber nirgends abgefangen. Anders als bei den Gemini-Aufrufen (siehe oben) gab es für Supabase-Storage-Aufrufe bisher überhaupt keine Retry-/Fehlerbehandlung.
+
+**Fund 2 — echtes, aktuelles Kontingent-Problem:** Der zweite Versuch (vom Nutzer manuell wiederholt) scheiterte mit `ClientError 429 RESOURCE_EXHAUSTED` beim Embedding-Call — sauber als `503` abgefangen (die bereits bestehende Fehlerbehandlung in `embed_texts` griff korrekt). Ein dritter Versuch kurz danach war erfolgreich (`201 Created`) — das Kontingent hatte sich bis dahin erholt. Bewertung: reines Resultat der intensiven Live-Test-Session des heutigen Tages auf dem gemeinsamen Free-Tier-Kontingent, keine Aktion nötig.
+
+**Fix (nur Fund 1):** `storage.py` um einen zu `gemini_client._call_with_retry` analogen Helfer ergänzt — ein `httpx.TimeoutException` bei `upload_source_file` wird jetzt einmal automatisch wiederholt; hält der Timeout auch beim zweiten Versuch an, kommt eine saubere `503` mit verständlicher Meldung beim Nutzer an statt eines rohen 500. Zwei neue Regressionstests (Retry-Erfolg, Timeout hält an → 503).
+
+**Bewusst nicht umgesetzt:** Dieselbe Absicherung für `upload_presentation_file`/`download_presentation_file`/`delete_presentation_file` — dort liegt bisher kein Live-Fund vor, der das rechtfertigt; Ausweitung ohne konkreten Anlass wäre unbegründete Vorab-Komplexität.
+
+**Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **137 Tests grün**.
+
+**Ergebnis:** Ein weiterer, unabhängiger Live-Fund (Timeout-Absicherung fehlte für einen zweiten externen Dienst neben Gemini) behoben; das gleichzeitig aufgetretene Kontingent-Problem war bereits durch bestehende Fehlerbehandlung korrekt abgefangen und hat sich von selbst erledigt.
