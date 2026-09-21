@@ -127,3 +127,69 @@ def test_generate_presentation_outline_raises_422_on_invalid_json(
         gemini_client.generate_presentation_outline("Thema", ["Kontext"])
 
     assert exc_info.value.status_code == 422
+
+
+class _OnceFailingThenRespondingModels:
+    """Simuliert genau den live auf Staging/Prod beobachteten Fall: Gemini antwortet
+    beim ersten Versuch mit einem transienten ServerError ("high demand"), beim
+    zweiten Versuch (Sekunden später) aber normal -- der Retry soll das für den
+    Nutzer komplett unsichtbar auffangen, statt eine Fehlermeldung zu zeigen."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self.call_count = 0
+
+    def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+        self.call_count += 1
+        if self.call_count == 1:
+            raise genai_errors.ServerError(503, {"message": "high demand"})
+        return _FakeGenerateContentResponse(self._text)
+
+
+class _OnceFailingThenRespondingClient:
+    def __init__(self, text: str) -> None:
+        self.models = _OnceFailingThenRespondingModels(text)
+
+
+def test_generate_answer_retries_once_on_server_error_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Beweist die neue Retry-Logik: ein einzelner transienter 503 darf nicht beim
+    Nutzer ankommen, wenn der zweite Versuch kurz danach erfolgreich ist."""
+    monkeypatch.setattr(gemini_client.time, "sleep", lambda _seconds: None)
+    fake_client = _OnceFailingThenRespondingClient("Die Antwort")
+    monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
+
+    answer = gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert answer == "Die Antwort"
+    assert fake_client.models.call_count == 2
+
+
+class _AlwaysServerErrorModels:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+        self.call_count += 1
+        raise genai_errors.ServerError(503, {"message": "still overloaded"})
+
+
+class _AlwaysServerErrorClient:
+    def __init__(self) -> None:
+        self.models = _AlwaysServerErrorModels()
+
+
+def test_generate_answer_gives_up_after_one_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hält der ServerError auch beim zweiten Versuch noch an, muss weiterhin sauber
+    als 503 beim Nutzer ankommen, statt endlos weiterzuversuchen -- genau EIN Retry,
+    nicht mehr."""
+    monkeypatch.setattr(gemini_client.time, "sleep", lambda _seconds: None)
+    fake_client = _AlwaysServerErrorClient()
+    monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
+
+    with pytest.raises(HTTPException) as exc_info:
+        gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert exc_info.value.status_code == 503
+    assert fake_client.models.call_count == 2
