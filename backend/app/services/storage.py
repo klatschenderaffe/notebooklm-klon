@@ -1,9 +1,41 @@
+import logging
 import ntpath
 import posixpath
 import re
+import time
+from collections.abc import Callable
+
+import httpx
+from fastapi import HTTPException
 
 from app.config import settings
 from app.services.supabase_client import get_client
+
+logger = logging.getLogger(__name__)
+
+STORAGE_UNAVAILABLE_DETAIL = (
+    "Speicher-Service ist momentan nicht erreichbar. Bitte versuche es später erneut."
+)
+
+
+# Live gefunden: ein Upload einer echten Quelle schlug nach genau den 20s
+# Standard-Timeout der Supabase-Python-Bibliothek (ClientOptions.storage_client_timeout)
+# mit einem ungefangenen httpx.ReadTimeout fehl -- landete als roher 500 beim Nutzer,
+# obwohl das Embedding direkt davor bereits erfolgreich war. Analog zu
+# gemini_client._call_with_retry: ein einzelner Retry fängt den häufigsten Fall (kurzer
+# transienter Netzwerk-Hänger) ab, bevor eine Fehlermeldung beim Nutzer ankommt.
+def _call_with_retry[T](fn: Callable[[], T], *, retry_delay_seconds: float = 1.5) -> T:
+    try:
+        return fn()
+    except httpx.TimeoutException as exc:
+        logger.warning(
+            "Supabase-Storage-Timeout, wiederhole einmal nach %.1fs: %s",
+            retry_delay_seconds,
+            exc,
+        )
+        time.sleep(retry_delay_seconds)
+        return fn()
+
 
 # Live gefunden (Sentry): ein URL-Quellen-Titel wie "[Hiring] DevOps Engineer
 # @Everlast Consulting GmbH" ließ den Supabase-Storage-Upload mit "Invalid key"
@@ -62,9 +94,16 @@ def upload_source_file(
     safe_filename = _sanitize_filename(filename)
     storage_path = f"{user_id}/{notebook_id}/{source_id}/{safe_filename}"
     content_type = CONTENT_TYPES[file_type]
-    get_client().storage.from_(settings.supabase_storage_bucket).upload(
-        storage_path, content, file_options={"content-type": content_type}
-    )
+    try:
+        _call_with_retry(
+            lambda: (
+                get_client()
+                .storage.from_(settings.supabase_storage_bucket)
+                .upload(storage_path, content, file_options={"content-type": content_type})
+            )
+        )
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail=STORAGE_UNAVAILABLE_DETAIL) from exc
     return storage_path
 
 
