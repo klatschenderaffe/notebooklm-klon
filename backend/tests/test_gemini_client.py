@@ -330,6 +330,99 @@ def test_generate_answer_gives_up_with_503_when_everything_times_out(
     assert fake_client.models.call_count == 3
 
 
+class _PrimaryQuotaExceededFallbackSucceedsModels:
+    """Simuliert den live gefundenen Fall: das Tages-/Modell-Kontingent des primären
+    Chat-Modells ist erschöpft (429 RESOURCE_EXHAUSTED, quotaDimensions.model zeigt
+    explizit das primäre Modell) -- das unabhängige Fallback-Modell hat ein eigenes,
+    noch nicht erschöpftes Kontingent und antwortet normal."""
+
+    def __init__(self, fallback_text: str) -> None:
+        self._fallback_text = fallback_text
+        self.calls: list[str] = []
+
+    def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+        self.calls.append(model)
+        if model == gemini_client.settings.gemini_chat_model:
+            raise genai_errors.ClientError(429, {"message": "quota exceeded"})
+        return _FakeGenerateContentResponse(self._fallback_text)
+
+
+class _PrimaryQuotaExceededFallbackSucceedsClient:
+    def __init__(self, fallback_text: str) -> None:
+        self.models = _PrimaryQuotaExceededFallbackSucceedsModels(fallback_text)
+
+
+def test_generate_answer_falls_back_when_primary_quota_exceeded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = _PrimaryQuotaExceededFallbackSucceedsClient("Antwort vom Fallback-Modell")
+    monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
+
+    answer = gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert answer == "Antwort vom Fallback-Modell"
+    # Kein Retry auf dem primären Modell (429 wird bewusst nicht wiederholt) -- nur ein
+    # Aufruf des primären Modells, direkt gefolgt vom Fallback-Modell.
+    assert fake_client.models.calls == [
+        gemini_client.settings.gemini_chat_model,
+        gemini_client.settings.gemini_chat_model_fallback,
+    ]
+
+
+def test_generate_answer_gives_up_with_503_when_both_models_quota_exceeded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _AlwaysQuotaExceededModels:
+        def __init__(self) -> None:
+            self.call_count = 0
+
+        def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+            self.call_count += 1
+            raise genai_errors.ClientError(429, {"message": "quota exceeded"})
+
+    class _AlwaysQuotaExceededClient:
+        def __init__(self) -> None:
+            self.models = _AlwaysQuotaExceededModels()
+
+    fake_client = _AlwaysQuotaExceededClient()
+    monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
+
+    with pytest.raises(HTTPException) as exc_info:
+        gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert exc_info.value.status_code == 503
+    assert fake_client.models.call_count == 2
+
+
+def test_generate_answer_does_not_fall_back_on_non_quota_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ein ClientError, der KEIN Kontingent-Fehler ist (z.B. 400 durch eine ungültige
+    Anfrage), würde durch einen Modellwechsel nicht behoben -- muss also weiterhin
+    direkt als 503 durchschlagen, ohne das Fallback-Modell unnötig zu belasten."""
+
+    class _InvalidRequestModels:
+        def __init__(self) -> None:
+            self.call_count = 0
+
+        def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+            self.call_count += 1
+            raise genai_errors.ClientError(400, {"message": "invalid request"})
+
+    class _InvalidRequestClient:
+        def __init__(self) -> None:
+            self.models = _InvalidRequestModels()
+
+    fake_client = _InvalidRequestClient()
+    monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
+
+    with pytest.raises(HTTPException) as exc_info:
+        gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert exc_info.value.status_code == 503
+    assert fake_client.models.call_count == 1
+
+
 def test_embed_texts_raises_503_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     class _TimingOutEmbedModels:
         def embed_content(self, model: str, contents: Any, config: Any) -> Any:
