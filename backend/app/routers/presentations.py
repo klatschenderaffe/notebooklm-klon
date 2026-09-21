@@ -1,10 +1,11 @@
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.auth import get_current_user_id
+from app.rate_limit import limiter
 from app.schemas import PresentationOut, PresentationRequest
 from app.services import history_store, storage, vector_store
 from app.services.design import validate_design
@@ -40,25 +41,30 @@ def download_presentation(
 
 
 @router.post("")
+# 5/Minute: teuerster Endpunkt überhaupt -- ein deutlich größerer Gemini-Call
+# (Outline-Generierung über potenziell viele Quellen-Chunks) als der Chat, deshalb
+# enger limitiert als chat/sources -- siehe app/rate_limit.py.
+@limiter.limit("5/minute")
 def create_presentation(
-    request: PresentationRequest,
+    request: Request,
+    presentation_request: PresentationRequest,
     notebook_id: str = Depends(require_owned_notebook_id),
     user_id: str = Depends(get_current_user_id),
 ) -> StreamingResponse:
-    chunks = vector_store.chunks_for_sources(notebook_id, request.source_ids)
+    chunks = vector_store.chunks_for_sources(notebook_id, presentation_request.source_ids)
     if not chunks:
         raise HTTPException(status_code=422, detail="Keine Quellen für die Präsentation gefunden")
 
     outline = generate_presentation_outline(
-        request.topic,
+        presentation_request.topic,
         [c["content"] for c in chunks],
-        design_description=request.design_description,
-        tone=request.tone,
-        slide_count_hint=request.slide_count_hint,
+        design_description=presentation_request.design_description,
+        tone=presentation_request.tone,
+        slide_count_hint=presentation_request.slide_count_hint,
     )
     design = validate_design(outline.get("design"))
     slides = outline.get("slides", [])
-    title = outline.get("title", request.topic)
+    title = outline.get("title", presentation_request.topic)
 
     pptx_bytes = build_presentation(title, slides, design)
 
@@ -66,7 +72,9 @@ def create_presentation(
     storage_path = storage.upload_presentation_file(
         user_id, notebook_id, presentation_id, pptx_bytes
     )
-    history_store.insert_presentation(notebook_id, title, request.topic, storage_path, design)
+    history_store.insert_presentation(
+        notebook_id, title, presentation_request.topic, storage_path, design
+    )
 
     return StreamingResponse(
         io.BytesIO(pptx_bytes),

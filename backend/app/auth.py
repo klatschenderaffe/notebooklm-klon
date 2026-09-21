@@ -59,4 +59,13 @@ def get_current_user_id(request: Request) -> str:
     # initialisiert wurde (kein SENTRY_DSN gesetzt) — siehe sentry_sdk.Scope.set_user.
     sentry_sdk.set_user({"id": user_id})
 
+    # Für app/rate_limit.py: das Rate-Limit soll pro Nutzer statt pro IP greifen (siehe
+    # Begründung dort), aber der Rate-Limit-Key wird von slowapi nur mit dem rohen
+    # Request aufgerufen, nicht mit den von FastAPI aufgelösten Dependency-Werten. Da
+    # diese Dependency IMMER vor dem eigentlichen Endpunkt (und damit vor der
+    # Rate-Limit-Prüfung) läuft, kann der Rate-Limiter die hier einmal verifizierte
+    # user_id einfach aus dem Request-State wiederverwenden, statt das JWT ein zweites
+    # Mal zu decodieren.
+    request.state.user_id = user_id
+
     return user_id

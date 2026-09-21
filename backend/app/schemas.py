@@ -1,4 +1,14 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# Großzügig bemessene Obergrenzen für Freitext-Eingabefelder. Ohne max_length könnte
+# ein Client beliebig große Payloads senden, die unnötig viel Speicher/CPU beim
+# Chunking/Embedding binden oder (bei question/content) den Gemini-Kontext sprengen.
+# Die konkreten Werte orientieren sich an realistischer Nutzung, nicht an einem
+# technischen Minimum -- z.B. ist eine 5000-Zeichen-Chatfrage bereits sehr lang für
+# eine einzelne Frage, aber immer noch harmlos für den Server.
+_SHORT_TEXT_MAX_LENGTH = 500
+_LONG_TEXT_MAX_LENGTH = 5000
+_URL_MAX_LENGTH = 2000
 
 
 class NotebookOut(BaseModel):
@@ -8,11 +18,11 @@ class NotebookOut(BaseModel):
 
 
 class NotebookCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=_SHORT_TEXT_MAX_LENGTH)
 
 
 class NotebookUpdate(BaseModel):
-    name: str
+    name: str = Field(max_length=_SHORT_TEXT_MAX_LENGTH)
 
 
 class SourceOut(BaseModel):
@@ -23,11 +33,11 @@ class SourceOut(BaseModel):
 
 
 class UrlSourceRequest(BaseModel):
-    url: str
+    url: str = Field(max_length=_URL_MAX_LENGTH)
 
 
 class ChatRequest(BaseModel):
-    question: str
+    question: str = Field(max_length=_LONG_TEXT_MAX_LENGTH)
 
 
 class ChatCitation(BaseModel):
@@ -41,15 +51,15 @@ class ChatResponse(BaseModel):
 
 
 class PresentationRequest(BaseModel):
-    topic: str
+    topic: str = Field(max_length=_SHORT_TEXT_MAX_LENGTH)
     source_ids: list[str] | None = None
-    design_description: str | None = None
-    tone: str | None = None
-    slide_count_hint: str | None = None
+    design_description: str | None = Field(default=None, max_length=_LONG_TEXT_MAX_LENGTH)
+    tone: str | None = Field(default=None, max_length=_SHORT_TEXT_MAX_LENGTH)
+    slide_count_hint: str | None = Field(default=None, max_length=_SHORT_TEXT_MAX_LENGTH)
 
 
 class NoteCreate(BaseModel):
-    content: str
+    content: str = Field(max_length=_LONG_TEXT_MAX_LENGTH)
 
 
 class NoteOut(BaseModel):

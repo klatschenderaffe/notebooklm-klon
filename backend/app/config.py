@@ -33,6 +33,21 @@ class Settings(BaseSettings):
     chunk_overlap_chars: int = 150
     max_upload_size_bytes: int = 20 * 1024 * 1024
 
+    # Timeout für den Abruf einer URL-Quelle (Sekunden). trafilatura.fetch_url() hat
+    # standardmäßig 30s Timeout (siehe trafilatura/settings.cfg) — das würde den
+    # einzigen Worker-Thread des Backends bei einer sehr langsamen Zielseite lange
+    # blockieren. Bewusst kürzer als der Default, da Nutzer beim Hinzufügen einer
+    # URL-Quelle synchron auf die Antwort warten.
+    url_extraction_timeout_seconds: int = 10
+
+    # Obergrenze für den aus einer URL extrahierten Text (Zeichen), BEVOR er gechunkt
+    # und eingebettet wird. Ohne dieses Limit kann eine einzelne, sehr große Webseite
+    # (z.B. eine lange Doku-Seite oder ein Datendump) unbegrenzt viele Chunks und damit
+    # Gemini-Embedding-Calls erzeugen — Risiko einer Kontingent-Erschöpfung durch eine
+    # einzige Quelle. Der Text wird bei Überschreitung sauber abgeschnitten statt die
+    # Quelle ganz abzulehnen, analog zu max_upload_size_bytes für Datei-Uploads.
+    max_extracted_url_text_chars: int = 200_000
+
     # Mindest-Kosinus-Ähnlichkeit (0-1), ab der ein Chunk als relevant genug gilt, um als
     # Chat-Kontext/Zitat verwendet zu werden. match_chunks liefert sonst immer bis zu
     # match_count Treffer zurück, auch wenn kein einziger davon thematisch passt (z.B. bei

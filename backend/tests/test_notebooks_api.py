@@ -72,6 +72,32 @@ def test_delete_notebook_cleans_up_storage(
     assert removed_presentation_paths == ["a/b/praesentation.pptx"]
 
 
+def test_delete_notebook_endpoint_returns_429_after_limit_exceeded(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """delete_notebook ist auf 20/Minute limitiert (siehe app/routers/notebooks.py):
+    der Endpunkt iteriert unbegrenzt über alle Source-/Präsentations-Storage-Pfade des
+    Notebooks, ein wiederholtes Anlegen+Löschen-Muster soll deshalb gebremst werden."""
+    monkeypatch.setattr(
+        notebooks_router.notebooks_store, "list_source_storage_paths", lambda notebook_id: []
+    )
+    monkeypatch.setattr(
+        notebooks_router.notebooks_store,
+        "list_presentation_storage_paths",
+        lambda notebook_id: [],
+    )
+    monkeypatch.setattr(
+        notebooks_router.notebooks_store, "delete_notebook", lambda user_id, notebook_id: None
+    )
+
+    for _ in range(20):
+        response = client.delete("/notebooks/some-notebook-id")
+        assert response.status_code == 204
+
+    response = client.delete("/notebooks/some-notebook-id")
+    assert response.status_code == 429
+
+
 def test_notebook_ownership_check_uses_current_user(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
