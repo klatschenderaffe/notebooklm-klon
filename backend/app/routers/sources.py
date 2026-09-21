@@ -95,7 +95,10 @@ async def upload_source(
     if len(content) > settings.max_upload_size_bytes:
         raise HTTPException(status_code=413, detail="Datei zu groß")
 
-    text = extract_text(file.filename, content)
+    try:
+        text = extract_text(file.filename, content)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return _ingest_source(user_id, notebook_id, file.filename, file_type, content, text)
 

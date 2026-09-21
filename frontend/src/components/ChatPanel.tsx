@@ -18,6 +18,7 @@ function ChatPanel({ notebookId, hasSources }: ChatPanelProps) {
   const [question, setQuestion] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -50,6 +51,7 @@ function ChatPanel({ notebookId, hasSources }: ChatPanelProps) {
     const trimmed = question.trim()
     if (!trimmed || isLoading) return
 
+    setError(null)
     setMessages((prev) => [...prev, { role: 'user', text: trimmed }])
     setQuestion('')
     setIsLoading(true)
@@ -61,8 +63,13 @@ function ChatPanel({ notebookId, hasSources }: ChatPanelProps) {
         { role: 'assistant', text: response.answer, citations: response.citations },
       ])
     } catch (err) {
+      // Fehler bewusst NICHT als Fake-assistant-Nachricht in messages ablegen: das
+      // Backend persistiert nur die echte User-Frage (vor dem Gemini-Call), nicht
+      // diese Meldung -- nach einem Reload würde sie sonst spurlos verschwinden,
+      // während die Frage stehen bleibt. Stattdessen session-lokaler Fehlerzustand,
+      // klar getrennt von den echten, persistierten Nachrichten.
       const message = err instanceof Error ? err.message : 'Anfrage fehlgeschlagen'
-      setMessages((prev) => [...prev, { role: 'assistant', text: `Fehler: ${message}` }])
+      setError(message)
     } finally {
       setIsLoading(false)
     }
@@ -97,6 +104,8 @@ function ChatPanel({ notebookId, hasSources }: ChatPanelProps) {
         ))}
         {isLoading && <p className="chat-empty">Antwort wird generiert …</p>}
       </div>
+
+      {error && <p className="chat-error">Fehler: {error}</p>}
 
       <form className="chat-input-row" onSubmit={handleSubmit}>
         <input

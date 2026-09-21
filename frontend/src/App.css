@@ -439,6 +439,16 @@
   color: var(--text-muted);
 }
 
+.chat-error {
+  /* Bewusst optisch von .chat-message unterschieden (kein Sprechblasen-Look): dieser
+     Hinweis ist session-lokal und übersteht keinen Reload, im Gegensatz zu den echten,
+     persistierten Nachrichten darüber -- soll deshalb klar als transienter Zustand statt
+     als weitere Chat-Nachricht erkennbar sein. */
+  color: #ef4444;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
 .chat-input-row {
   display: flex;
   gap: 8px;
