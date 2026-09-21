@@ -1,5 +1,6 @@
 from typing import Any
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from google.genai import errors as genai_errors
@@ -259,3 +260,89 @@ def test_generate_answer_falls_back_to_second_model_when_primary_still_overloade
         gemini_client.settings.gemini_chat_model,
         gemini_client.settings.gemini_chat_model_fallback,
     ]
+
+
+class _OnceTimingOutThenRespondingModels:
+    """Regression test: ohne explizites Timeout kann ein einzelner Gemini-Aufruf laut
+    SDK-Quellcode unbegrenzt lange hängen -- live am 21.09. mit über zwei Minuten
+    Wartezeit für eine einzelne Antwort beobachtet. Ein `httpx.TimeoutException` muss
+    strukturell genauso wie ein `ServerError` behandelt werden (Retry, dann Fallback),
+    statt als generischer 500 durchzuschlagen."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self.call_count = 0
+
+    def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+        self.call_count += 1
+        if self.call_count == 1:
+            raise httpx.ReadTimeout("Zeitüberschreitung")
+        return _FakeGenerateContentResponse(self._text)
+
+
+class _OnceTimingOutThenRespondingClient:
+    def __init__(self, text: str) -> None:
+        self.models = _OnceTimingOutThenRespondingModels(text)
+
+
+def test_generate_answer_retries_once_on_timeout_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gemini_client.time, "sleep", lambda _seconds: None)
+    fake_client = _OnceTimingOutThenRespondingClient("Die Antwort")
+    monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
+
+    answer = gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert answer == "Die Antwort"
+    assert fake_client.models.call_count == 2
+
+
+class _AlwaysTimingOutModels:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+        self.call_count += 1
+        raise httpx.ReadTimeout("Zeitüberschreitung")
+
+
+class _AlwaysTimingOutClient:
+    def __init__(self) -> None:
+        self.models = _AlwaysTimingOutModels()
+
+
+def test_generate_answer_gives_up_with_503_when_everything_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hält das Timeout beim primären UND beim Fallback-Modell an, muss weiterhin
+    sauber als 503 beim Nutzer ankommen, statt eines generischen 500 (httpx.TimeoutException
+    ist keine google.genai.errors.APIError und würde ohne den erweiterten Fang
+    ungefangen durchschlagen)."""
+    monkeypatch.setattr(gemini_client.time, "sleep", lambda _seconds: None)
+    fake_client = _AlwaysTimingOutClient()
+    monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
+
+    with pytest.raises(HTTPException) as exc_info:
+        gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert exc_info.value.status_code == 503
+    assert fake_client.models.call_count == 3
+
+
+def test_embed_texts_raises_503_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _TimingOutEmbedModels:
+        def embed_content(self, model: str, contents: Any, config: Any) -> Any:
+            raise httpx.ReadTimeout("Zeitüberschreitung")
+
+    class _TimingOutEmbedClient:
+        def __init__(self) -> None:
+            self.models = _TimingOutEmbedModels()
+
+    monkeypatch.setattr(gemini_client.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(gemini_client, "get_client", lambda: _TimingOutEmbedClient())
+
+    with pytest.raises(HTTPException) as exc_info:
+        gemini_client.embed_texts(["Text"], task_type="RETRIEVAL_DOCUMENT")
+
+    assert exc_info.value.status_code == 503

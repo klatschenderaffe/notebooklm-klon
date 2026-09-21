@@ -5,6 +5,7 @@ from collections.abc import Callable
 from functools import lru_cache
 from typing import Any, cast
 
+import httpx
 from fastapi import HTTPException
 from google import genai
 from google.genai import errors as genai_errors
@@ -19,20 +20,34 @@ GEMINI_UNAVAILABLE_DETAIL = (
     "KI-Service ist momentan nicht verfügbar. Bitte versuche es später erneut."
 )
 
+# Live beobachtet (21.09.): ohne explizites Timeout wartet die SDK laut eigenem Quellcode
+# (_api_client.py, max_allowed_time = float('inf') falls http_options.timeout None ist)
+# potenziell unbegrenzt lange auf eine Antwort. Bei Googles "high demand"-Zustand kam die
+# 503-Antwort dadurch teils erst nach über zwei Minuten -- gefühlt ein Hänger, technisch
+# kein Fehler, aber für den Nutzer ununterscheidbar von einem echten Absturz. 30s deckt
+# normale, auch etwas langsamere Antworten (z.B. längere Präsentationsgliederungen) ab,
+# begrenzt aber den Extremfall auf ein erträgliches Maß -- vor allem in Kombination mit
+# Retry + Fallback unten, die sonst im schlimmsten Fall Minuten aufaddieren würden.
+_REQUEST_TIMEOUT_MS = 30_000
+
 
 def _call_with_retry[T](fn: Callable[[], T], *, retry_delay_seconds: float = 1.5) -> T:
     """Ruft `fn` auf und versucht es genau einmal erneut, falls Gemini mit einem
-    `ServerError` (5xx) antwortet -- live wiederholt beobachtete "high demand"-503er
-    sind laut Googles eigener Fehlermeldung ausdrücklich "usually temporary". Ein
-    einziger Retry mit kurzer Pause fängt genau diesen häufigsten Fall ab, ohne bei
-    einem echten, andauernden Ausfall spürbar Zeit zu verschwenden. `ClientError`
-    (4xx, z.B. ungültiger API-Key oder Kontingent dauerhaft aufgebraucht) wird bewusst
-    NICHT wiederholt -- ein erneuter Versuch würde dort nichts ändern."""
+    `ServerError` (5xx) antwortet oder die Anfrage das Timeout überschreitet (siehe
+    _REQUEST_TIMEOUT_MS) -- live wiederholt beobachtete "high demand"-503er sind laut
+    Googles eigener Fehlermeldung ausdrücklich "usually temporary", ein Timeout unter
+    Last ist strukturell gleich zu behandeln. Ein einziger Retry mit kurzer Pause fängt
+    genau diesen häufigsten Fall ab, ohne bei einem echten, andauernden Ausfall spürbar
+    Zeit zu verschwenden. `ClientError` (4xx, z.B. ungültiger API-Key oder Kontingent
+    dauerhaft aufgebraucht) wird bewusst NICHT wiederholt -- ein erneuter Versuch würde
+    dort nichts ändern."""
     try:
         return fn()
-    except genai_errors.ServerError as exc:
+    except (genai_errors.ServerError, httpx.TimeoutException) as exc:
         logger.warning(
-            "Gemini-ServerError, wiederhole einmal nach %.1fs: %s", retry_delay_seconds, exc
+            "Gemini-ServerError/Timeout, wiederhole einmal nach %.1fs: %s",
+            retry_delay_seconds,
+            exc,
         )
         time.sleep(retry_delay_seconds)
         return fn()
@@ -54,7 +69,7 @@ def _generate_content_with_fallback(contents: Any, config: types.GenerateContent
                 model=settings.gemini_chat_model, contents=contents, config=config
             )
         )
-    except genai_errors.ServerError as exc:
+    except (genai_errors.ServerError, httpx.TimeoutException) as exc:
         logger.warning(
             "Primäres Chat-Modell %s weiterhin überlastet, weiche auf Fallback-Modell %s aus: %s",
             settings.gemini_chat_model,
@@ -80,7 +95,10 @@ OUTLINE_INSTRUCTION = (
 
 @lru_cache
 def get_client() -> genai.Client:
-    return genai.Client(api_key=settings.gemini_api_key)
+    return genai.Client(
+        api_key=settings.gemini_api_key,
+        http_options=types.HttpOptions(timeout=_REQUEST_TIMEOUT_MS),
+    )
 
 
 def embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
@@ -110,7 +128,7 @@ def embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
                 ),
             )
         )
-    except genai_errors.APIError as exc:
+    except (genai_errors.APIError, httpx.TimeoutException) as exc:
         logger.warning("Gemini-API-Fehler bei embed_texts: %s", exc)
         raise HTTPException(status_code=503, detail=GEMINI_UNAVAILABLE_DETAIL) from exc
     return [list(embedding.values or []) for embedding in response.embeddings or []]
@@ -130,7 +148,7 @@ def generate_answer(question: str, context_chunks: list[str]) -> str:
             contents=prompt,
             config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION),
         )
-    except genai_errors.APIError as exc:
+    except (genai_errors.APIError, httpx.TimeoutException) as exc:
         logger.warning("Gemini-API-Fehler bei generate_answer: %s", exc)
         raise HTTPException(status_code=503, detail=GEMINI_UNAVAILABLE_DETAIL) from exc
     return response.text or ""
@@ -214,7 +232,7 @@ def generate_presentation_outline(
                 response_schema=response_schema,
             ),
         )
-    except genai_errors.APIError as exc:
+    except (genai_errors.APIError, httpx.TimeoutException) as exc:
         logger.warning("Gemini-API-Fehler bei generate_presentation_outline: %s", exc)
         raise HTTPException(status_code=503, detail=GEMINI_UNAVAILABLE_DETAIL) from exc
 
