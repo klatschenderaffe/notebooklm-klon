@@ -62,6 +62,30 @@ def test_embed_texts_returns_empty_list_for_no_texts(monkeypatch: pytest.MonkeyP
     assert fake_client.models.last_contents is None
 
 
+class _FailingEmbedModels:
+    def embed_content(self, model: str, contents: Any, config: Any) -> Any:
+        raise genai_errors.APIError(503, {"message": "embedding service down"})
+
+
+class _FailingEmbedClient:
+    def __init__(self) -> None:
+        self.models = _FailingEmbedModels()
+
+
+def test_embed_texts_raises_503_on_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression test: embed_texts() hatte bisher (anders als generate_answer/
+    generate_presentation_outline) keinen APIError-Fang -- ein anhaltender
+    Gemini-Fehler beim Embedding schlug dadurch ungefangen bis zum generischen
+    500-Handler durch, statt als klare 503 erkennbar zu sein (live in Sentry mehrfach
+    als "Unhandled" auf genau diesem Pfad markiert)."""
+    monkeypatch.setattr(gemini_client, "get_client", lambda: _FailingEmbedClient())
+
+    with pytest.raises(HTTPException) as exc_info:
+        gemini_client.embed_texts(["Text"], task_type="RETRIEVAL_DOCUMENT")
+
+    assert exc_info.value.status_code == 503
+
+
 class _FakeGenerateContentResponse:
     def __init__(self, text: str) -> None:
         self.text = text
@@ -181,9 +205,11 @@ class _AlwaysServerErrorClient:
 
 
 def test_generate_answer_gives_up_after_one_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Hält der ServerError auch beim zweiten Versuch noch an, muss weiterhin sauber
-    als 503 beim Nutzer ankommen, statt endlos weiterzuversuchen -- genau EIN Retry,
-    nicht mehr."""
+    """Hält der ServerError beim primären Modell auch nach dem Retry noch an, wird
+    zusätzlich das Fallback-Modell versucht (siehe
+    test_generate_answer_falls_back_to_second_model_when_primary_still_overloaded);
+    hält der ServerError auch dort an, muss es sauber als 503 beim Nutzer ankommen,
+    statt endlos weiterzuversuchen -- genau ein Retry pro Modell, nicht mehr."""
     monkeypatch.setattr(gemini_client.time, "sleep", lambda _seconds: None)
     fake_client = _AlwaysServerErrorClient()
     monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
@@ -192,4 +218,44 @@ def test_generate_answer_gives_up_after_one_retry(monkeypatch: pytest.MonkeyPatc
         gemini_client.generate_answer("Frage", ["Kontext"])
 
     assert exc_info.value.status_code == 503
-    assert fake_client.models.call_count == 2
+    # 2 Versuche primäres Modell (initial + Retry) + 1 Versuch Fallback-Modell.
+    assert fake_client.models.call_count == 3
+
+
+class _PrimaryFailsFallbackSucceedsModels:
+    """Simuliert das live am 21.09. beobachtete Muster: das primäre Chat-Modell bleibt
+    auch nach dem Retry überlastet, ein unabhängiges zweites (Fallback-)Modell
+    antwortet aber normal -- genau der Fall, für den _generate_content_with_fallback
+    eingeführt wurde."""
+
+    def __init__(self, fallback_text: str) -> None:
+        self._fallback_text = fallback_text
+        self.calls: list[str] = []
+
+    def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+        self.calls.append(model)
+        if model == gemini_client.settings.gemini_chat_model:
+            raise genai_errors.ServerError(503, {"message": "high demand"})
+        return _FakeGenerateContentResponse(self._fallback_text)
+
+
+class _PrimaryFailsFallbackSucceedsClient:
+    def __init__(self, fallback_text: str) -> None:
+        self.models = _PrimaryFailsFallbackSucceedsModels(fallback_text)
+
+
+def test_generate_answer_falls_back_to_second_model_when_primary_still_overloaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gemini_client.time, "sleep", lambda _seconds: None)
+    fake_client = _PrimaryFailsFallbackSucceedsClient("Antwort vom Fallback-Modell")
+    monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
+
+    answer = gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert answer == "Antwort vom Fallback-Modell"
+    assert fake_client.models.calls == [
+        gemini_client.settings.gemini_chat_model,
+        gemini_client.settings.gemini_chat_model,
+        gemini_client.settings.gemini_chat_model_fallback,
+    ]

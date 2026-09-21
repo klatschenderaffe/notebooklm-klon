@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     # bisheriger Projekterfahrung im Wochen-Takt -- bei erneuten 503ern hier zuerst
     # nachsehen, welches Modell gerade lebt.
     gemini_chat_model: str = "gemini-3.7-flash"
+    # Live beobachtet (21.09., ca. eine Stunde nach dem Wechsel auf gemini-3.7-flash):
+    # auch dieses Modell geriet in Googles "high demand"-Zustand (503), genau wie
+    # zuvor gemini-3.6-flash -- Kapazitätsengpässe werden offenbar pro Modell separat
+    # verwaltet und können unabhängig voneinander auftreten. Ein reiner Retry auf
+    # demselben Modell (siehe _call_with_retry) hilft nur bei kurzen Spitzen; hält die
+    # Überlastung länger an, weicht generate_answer/generate_presentation_outline
+    # zusätzlich auf dieses zweite, unabhängige Modell aus (siehe
+    # _generate_content_with_fallback in gemini_client.py). gemini-3.5-flash lief am
+    # selben Tag live stabil, als gemini-3.6-flash bereits 503'te.
+    gemini_chat_model_fallback: str = "gemini-3.5-flash"
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_embedding_dimensions: int = 768
 
