@@ -879,3 +879,17 @@ Direkt nach dem Deploy des quotenbewussten Fallbacks (siehe oben) erneut live ge
 **Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **141 Tests grün**.
 
 **Ergebnis:** Die Retry-Logik ist jetzt für beide Modelle symmetrisch, statt nur für das primäre. Der zugrundeliegende Google-seitige Engpass (heute mehrfach beobachtet: 503 auf beiden Modellen gleichzeitig, dazu ein Tages-Kontingent von nur 20 Anfragen pro Modell) bleibt ein reales Free-Tier-Limit, das kein Code-Fix vollständig auflösen kann — die App reagiert darauf inzwischen aber so robust wie mit den verfügbaren Mitteln möglich (Retry pro Modell, Modell-Fallback, begrenzte Gesamt-Wartezeit durch das Timeout).
+
+---
+
+## 2026-09-21 — Nutzerwunsch: kürzere Wartezeit statt noch mehr Retries
+
+Direkt nach dem letzten Fix erneut live getestet: das primäre Modell scheiterte sofort am Tages-Kontingent (429, ~1s), der Fallback hing aber bei **beiden** eigenen Versuchen volle 30s fest, bevor er mit `504 DEADLINE_EXCEEDED` aufgab — in Summe ca. 62s für eine einzige Fehlermeldung. Nutzerwunsch: die Wartezeit spürbar verkürzen, auch wenn das zugrundeliegende Google-Problem selbst nicht lösbar ist.
+
+**Abwägung mit dem Nutzer:** Drei Optionen besprochen (Gleich-Modell-Retry entfernen / Timeout pro Versuch verkürzen / beides). Entscheidung: **Gleich-Modell-Retry entfernen**, Timeout bei 30s belassen (schützt weiterhin legitim langsamere Antworten wie Präsentationsgliederungen). Begründung: An jedem einzelnen heute live beobachteten Fall half der Retry auf demselben Modell während einer anhaltenden Störung nie — er hat nur die Wartezeit verdoppelt. Bei einer echten, kurzen Spitze übernimmt das Fallback-Modell ohnehin dieselbe Rolle wie zuvor der Retry.
+
+**Fix:** `_generate_content_with_fallback()` ruft `generate_content` jetzt direkt auf (kein `_call_with_retry` mehr) — sowohl für das primäre als auch für das Fallback-Modell. Maximal 2 Versuche statt vorher 4, Worst Case sinkt von ca. 120s auf ca. 60s. `_call_with_retry()` selbst bleibt unverändert bestehen und wird weiterhin von `embed_texts()` verwendet (dort nicht Teil des gemeldeten Problems). Mehrere bestehende Tests entsprechend angepasst (neue, korrekte Anrufzahlen: 1 statt 2 Versuche pro Modell); ein jetzt gegenstandsloser Test (Fallback-Modell erholt sich beim eigenen Retry) entfernt, da dieser Retry bewusst abgeschafft wurde; die Retry-Erfolg-Abdeckung für `_call_with_retry()` selbst in zwei neue, direkte Unit-Tests der Helper-Funktion verschoben (weiterhin relevant für `embed_texts()`).
+
+**Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **140 Tests grün**.
+
+**Ergebnis:** Bewusste Entscheidung, Resilienz gegen Geschwindigkeit einzutauschen, nachdem die heutigen Live-Daten zeigten, dass der Gleich-Modell-Retry in der aktuellen, anhaltenden Free-Tier-Störung praktisch nutzlos war. Der Chat liefert jetzt spürbar schneller eine klare Fehlermeldung, statt bis zu zwei Minuten zu warten, ohne dabei die Präsentations-Generierung durch ein zu kurzes Timeout zu gefährden.

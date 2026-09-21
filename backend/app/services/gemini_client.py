@@ -57,38 +57,36 @@ _QUOTA_EXCEEDED_STATUS_CODE = 429
 
 
 def _generate_content_with_fallback(contents: Any, config: types.GenerateContentConfig) -> Any:
-    """Ruft generate_content mit dem primären Chat-Modell auf (inkl. Einmal-Retry via
-    _call_with_retry) und weicht auf ein zweites, unabhängiges Modell aus, statt
-    denselben Modell-Endpunkt ein drittes Mal zu versuchen, wenn entweder:
+    """Ruft generate_content mit dem primären Chat-Modell auf und weicht auf ein
+    zweites, unabhängiges Modell aus, statt denselben Modell-Endpunkt erneut zu
+    versuchen, wenn entweder:
 
-    - der ServerError/Timeout auch nach dem Retry anhält (live beobachtet: sowohl
-      gemini-3.6-flash als auch später am selben Tag gemini-3.7-flash gerieten
-      unabhängig voneinander in Googles "high demand"-Zustand), oder
+    - ein ServerError/Timeout auftritt (live beobachtet: sowohl gemini-3.6-flash als
+      auch später am selben Tag gemini-3.7-flash gerieten unabhängig voneinander in
+      Googles "high demand"-Zustand), oder
     - ein ClientError mit Status 429 (Kontingent erschöpft) auftritt. Live gefunden:
       die Fehlermeldung selbst zeigt, dass das Kontingent PRO MODELL gilt
       ("quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
       "quotaDimensions": {"model": "gemini-3.7-flash"}) -- ein Fallback auf ein
       anderes Modell mit eigenem, unabhängigem Kontingent-Topf kann hier tatsächlich
-      helfen, anders als ein Retry auf demselben Modell (dessen Kontingent bleibt
-      erschöpft, siehe _call_with_retry oben).
+      helfen.
 
-    Ein reiner Retry auf demselben Modell überbrückt keinen der beiden Fälle, wenn die
-    Störung länger als der kurze Retry-Delay anhält bzw. das Kontingent für den Rest
-    des Tages erschöpft ist (siehe config.py, gemini_chat_model_fallback).
-
-    Live gefunden: der Fallback-Aufruf selbst schlug einmal mit einem transienten
-    504 DEADLINE_EXCEEDED fehl (ServerError) und gab sofort auf, ohne den einmaligen
-    Retry zu bekommen, den das primäre Modell schon hat -- der Fallback-Aufruf läuft
-    deshalb jetzt ebenfalls über _call_with_retry."""
+    Bewusst KEIN Retry auf demselben Modell mehr (anders als in einer früheren
+    Version): live am 21.09. wiederholt beobachtet, dass ein Retry auf demselben
+    Modell während einer anhaltenden Störung praktisch nie half, aber bei einem
+    Timeout von 30s pro Versuch (_REQUEST_TIMEOUT_MS) die Gesamt-Wartezeit auf bis zu
+    4 Versuche (2x primär + 2x Fallback, ca. 120s im schlimmsten Fall) aufsummierte --
+    für den Nutzer als "hängt ewig" wahrgenommen. Jetzt nur noch primär → Fallback
+    (max. 2 Versuche, ca. 60s im schlimmsten Fall). Bei einer kurzen, echten Spitze
+    übernimmt das Fallback-Modell die Rolle des früheren Retries; bei einer
+    andauernden Störung wird der Fehler dafür doppelt so schnell klar erkennbar."""
     try:
-        return _call_with_retry(
-            lambda: get_client().models.generate_content(
-                model=settings.gemini_chat_model, contents=contents, config=config
-            )
+        return get_client().models.generate_content(
+            model=settings.gemini_chat_model, contents=contents, config=config
         )
     except (genai_errors.ServerError, httpx.TimeoutException) as exc:
         logger.warning(
-            "Primäres Chat-Modell %s weiterhin überlastet, weiche auf Fallback-Modell %s aus: %s",
+            "Primäres Chat-Modell %s überlastet, weiche auf Fallback-Modell %s aus: %s",
             settings.gemini_chat_model,
             settings.gemini_chat_model_fallback,
             exc,
@@ -102,10 +100,8 @@ def _generate_content_with_fallback(contents: Any, config: types.GenerateContent
             settings.gemini_chat_model_fallback,
             exc,
         )
-    return _call_with_retry(
-        lambda: get_client().models.generate_content(
-            model=settings.gemini_chat_model_fallback, contents=contents, config=config
-        )
+    return get_client().models.generate_content(
+        model=settings.gemini_chat_model_fallback, contents=contents, config=config
     )
 
 
