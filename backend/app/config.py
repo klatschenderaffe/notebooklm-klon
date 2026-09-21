@@ -15,7 +15,15 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     gemini_api_key: str = ""
-    gemini_chat_model: str = "gemini-3.6-flash"
+    # gemini-3.6-flash (vorheriger Standard) lieferte am 21.09. wiederholt 503 "high
+    # demand" -- live gegen mehrere Kandidaten getestet (nicht nur Doku/Modell-Liste
+    # geglaubt): gemini-2.5-flash 404 (für diesen Account nicht verfügbar, bekannt seit
+    # Projektbeginn), gemini-flash-latest ebenfalls 503, gemini-3.5-flash UND
+    # gemini-3.7-flash beide erfolgreich. gemini-3.7-flash gewählt als der neuere,
+    # aktuell stabil funktionierende Kandidat. Modellverfügbarkeit ändert sich laut
+    # bisheriger Projekterfahrung im Wochen-Takt -- bei erneuten 503ern hier zuerst
+    # nachsehen, welches Modell gerade lebt.
+    gemini_chat_model: str = "gemini-3.7-flash"
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_embedding_dimensions: int = 768
 
