@@ -720,3 +720,29 @@ Backend: `ruff check .`, `mypy app`, `pytest -q` → **119 Tests grün** (von 88
 **Ergebnis:** Alle in der Audit-Runde gefundenen Sicherheits- und Verfügbarkeitslücken kostenlos (reiner Code, keine zusätzliche bezahlte Infrastruktur) behoben, jede bewusste Abwägung (akzeptierte Restrisiken, gewählte Limit-Werte, Key-Funktions-Design) direkt im Code dokumentiert. Einzig offener Punkt vor dem nächsten Produktions-Deploy ist die manuelle CSP-Verifikation auf der echten Staging-Umgebung (siehe oben).
 
 **Rollout abgeschlossen:** Über PR #4 gemerged (CI grün, QA-Gate durchlaufen). Vor dem Einspielen der Migration wurde der erfolgreiche Deploy auf beiden Render-Umgebungen aktiv per HTTP-Check verifiziert (der entfernte `POST .../sources/youtube`-Endpoint liefert jetzt `405 Method Not Allowed` statt der alten Route — der Pfad matcht stattdessen auf die generische `DELETE /sources/{source_id}`-Route, ein eindeutiges Signal, dass der neue Code läuft, nicht nur angenommen). Erst danach Migration `0006` im SQL Editor von Staging und Produktion eingespielt. Damit ist die YouTube/Audio-Entfernung auf allen drei Umgebungen (lokal, Staging, Produktion) vollständig ausgerollt.
+
+---
+
+## 2026-09-21 — Zwei Deploy-Pipeline-Bugs gefunden und behoben (CSP nie live, E2E gegen tote URL)
+
+Ausgangspunkt: der aus dem Sicherheits-Audit offen gebliebene Verifikationsschritt — CSP-Header vor dem Produktions-Merge live auf Staging prüfen (siehe oben). PR #6 (Sicherheits-Hardening) war zu diesem Zeitpunkt bereits nach `develop` gepusht und alle CI-Checks grün, inklusive eines grünen Cloudflare-"Workers Builds"-Checks für den Staging-Build.
+
+### Bug 1: Cloudflare-Staging-Projekt deployte Builds nie live
+
+Der CSP-Header fehlte auf der echten Staging-URL trotz grünem Build. Direkt im Cloudflare-Dashboard nachverfolgt statt geraten: Der Tab "Deployments" des Projekts `notebooklm-klon-staging` zeigte, dass die aktive Version weiterhin ein 19 Stunden alter Stand war — der neue, erfolgreich gebaute Commit stand mit 0% Traffic in der Versions-Historie, wurde aber nie promotet.
+
+**Root Cause:** Unter Settings → Builds → Branch control stand "Production branch" auf **`main`**, obwohl dieses Projekt inhaltlich die Staging-Umgebung ist und auf `develop` reagieren soll. Cloudflares Git-Integration führt bei einem Push auf den konfigurierten Production-Branch den vollen `Deploy`-Befehl aus (100% Traffic); bei jedem anderen Branch — inklusive `develop`, solange "Builds for non-production branches" aktiv ist — läuft nur `wrangler versions upload` (Preview-Version ohne Traffic-Zuweisung). Zum Vergleich geprüft: Das zweite Projekt `notebooklm-klon-prod` hat "Production branch" korrekt auf `main` stehen — dort hat es immer funktioniert, weil die Einstellung von Anfang an richtig war.
+
+**Fix:** "Production branch" auf `develop` umgestellt (vom Nutzer im Dashboard selbst vorgenommen), anschließend die bereits gebaute, aber nie promotete Version einmalig über "Promote version" auf 100% Traffic gesetzt (Cloudflare-Dashboard, live gemeinsam mit dem Nutzer durchgeführt). Verifiziert: `curl -I` gegen die echte Staging-URL zeigt danach alle vier neuen Security-Header (`content-security-policy`, `x-content-type-options`, `x-frame-options`, `referrer-policy`).
+
+**Bewusste Entscheidung — kein zusätzlicher CI/CD-Schritt gebaut:** Die eigentliche Frage war, ob dafür eine eigene Pipeline-Automatisierung (z.B. ein `wrangler deploy`-Schritt in `ci.yml`) nötig ist. Antwort: nein — es war ein einmaliger Konfigurationsfehler, keine fehlende Fähigkeit. Cloudflares native Git-Integration deployt bei jedem künftigen `develop`-Push jetzt automatisch mit 100% Traffic, genau wie sie es beim korrekt konfigurierten Produktions-Projekt schon die ganze Zeit getan hat. Eine selbstgebaute Lösung wäre eine Dopplung vorhandener, nativer Funktionalität gewesen.
+
+### Bug 2: E2E-Workflow testete seit Tagen gegen eine tote URL
+
+Zur endgültigen Verifikation (Login + echter Backend-Call, nicht nur Header-Check) wurde `e2e.yml` manuell per `workflow_dispatch` gegen `develop` ausgelöst — alle 5 Tests schlugen fehl, auch die 4 rein clientseitigen (Login-/Signup-Formular-Rendering, Redirect-Schutz), die mit dem CSP-Fix gar nichts zu tun haben sollten.
+
+**Root Cause:** `E2E_BASE_URL` in `.github/workflows/e2e.yml` war fest auf `https://develop-notebooklm-klon.piaheiss.workers.dev` gesetzt — dieselbe Branch-Alias-URL, die schon zu Beginn dieser Debugging-Sitzung Cloudflares generische "There is nothing here yet"-Seite zeigte. Diese URL hatte tatsächlich funktioniert: ein Lauf vom 18.09. mit identischer URL war 5/5 grün. Zwischen dem 18.09. und heute wurde das Staging-Cloudflare-Projekt im Zuge des separaten Produktions-Projekts auf den Namen `notebooklm-klon-staging` umbenannt/reorganisiert — die alte `develop-notebooklm-klon`-Branch-Alias-Subdomain existiert seitdem nicht mehr, aber `e2e.yml` wurde nie nachgezogen. Da der Workflow nur wöchentlich/manuell läuft, ist das drei Tage lang unbemerkt geblieben.
+
+**Fix:** `E2E_BASE_URL` auf `https://notebooklm-klon-staging.piaheiss.workers.dev` korrigiert (die tatsächliche, im Dashboard unter "Domains" verifizierte Worker-URL). Erneuter `workflow_dispatch`-Lauf zur Bestätigung ausstehend.
+
+**Ergebnis:** Zwei unabhängige, durch Infrastruktur-Reorganisation entstandene Drift-Bugs gefunden und behoben — keiner davon eine Regression durch den Sicherheits-Hardening-Code selbst, aber beide hätten unentdeckt dafür gesorgt, dass weder der neue CSP-Header noch künftige Deploys zuverlässig auf Staging ankommen, ohne dass CI (die nur Build-Erfolg, nicht Live-Traffic oder die tatsächliche Ziel-URL prüft) das angezeigt hätte.
