@@ -103,6 +103,35 @@ def test_upload_source_file_sanitizes_path_traversal_filenames(
     assert ".." not in path
 
 
+def test_upload_source_file_replaces_invalid_storage_key_characters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: live in Sentry gefunden -- ein URL-Quellen-Titel wie
+    "[Hiring] DevOps Engineer @Everlast..." ist kein Pfad-Traversal-Versuch, aber "[",
+    "]" und "@" sind trotzdem keine gültigen Supabase-Storage-Key-Zeichen und ließen den
+    Upload mit "Invalid key" fehlschlagen."""
+    bucket = _FakeBucket()
+    monkeypatch.setattr(storage_module, "get_client", lambda: _FakeClient(bucket))
+
+    storage_module.upload_source_file(
+        "user-1",
+        "notebook-1",
+        "source-1",
+        "[Hiring] DevOps Engineer @Everlast Consulting GmbH",
+        b"data",
+        "md",
+    )
+
+    [(path, _content, _file_options)] = bucket.upload_calls
+    assert path == (
+        "user-1/notebook-1/source-1/"
+        "_Hiring_ DevOps Engineer _Everlast Consulting GmbH"
+    )
+    assert "[" not in path
+    assert "]" not in path
+    assert "@" not in path
+
+
 def test_delete_source_file_removes_by_path(monkeypatch: pytest.MonkeyPatch) -> None:
     bucket = _FakeBucket()
     monkeypatch.setattr(storage_module, "get_client", lambda: _FakeClient(bucket))

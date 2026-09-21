@@ -1,8 +1,18 @@
 import ntpath
 import posixpath
+import re
 
 from app.config import settings
 from app.services.supabase_client import get_client
+
+# Live gefunden (Sentry): ein URL-Quellen-Titel wie "[Hiring] DevOps Engineer
+# @Everlast Consulting GmbH" ließ den Supabase-Storage-Upload mit "Invalid key"
+# fehlschlagen -- eckige Klammern und "@" sind zwar keine Pfad-Traversal-Zeichen (schon
+# durch basename()/lstrip(".") abgedeckt), aber trotzdem keine gültigen Storage-Key-
+# Zeichen. Statt jedes Mal ein neu gefundenes Sonderzeichen einzeln zu verbieten (fragil,
+# nie vollständig), wird jetzt eine feste Erlaubnisliste durchgesetzt: alles außer
+# Buchstaben/Ziffern/Leerzeichen/"-"/"_"/"." wird durch "_" ersetzt.
+_UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9 ._-]")
 
 CONTENT_TYPES = {
     "pdf": "application/pdf",
@@ -30,6 +40,10 @@ def _sanitize_filename(filename: str) -> str:
     cleaned = filename.replace("\x00", "")
     cleaned = ntpath.basename(cleaned)
     cleaned = posixpath.basename(cleaned)
+    # Erlaubnisliste statt Verbotsliste -- deckt auch Zeichen ab, die kein Pfad-
+    # Traversal-Risiko sind, aber trotzdem als Storage-Key ungültig sind (z.B. "[", "]",
+    # "@", siehe Kommentar bei _UNSAFE_FILENAME_CHARS oben).
+    cleaned = _UNSAFE_FILENAME_CHARS.sub("_", cleaned)
     # Führende Punkte (".", "..", "...") ergeben nach basename() zwar keinen
     # Verzeichnis-Anteil mehr, könnten aber z.B. versteckte Dateien erzeugen oder als
     # "." bzw. ".." komplett leer wirken -- daher zusätzlich entfernen.
