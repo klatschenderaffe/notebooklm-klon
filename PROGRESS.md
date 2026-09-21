@@ -865,3 +865,17 @@ Erneuter Live-Test nach den beiden vorherigen Fixes zeigte weiterhin eine sehr l
 **Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **140 Tests grün**.
 
 **Ergebnis:** Die dritte, unterschiedliche Facette desselben Grundproblems (Google-seitige Kapazitäts-/Kontingent-Grenzen im Free Tier) gefunden und behoben — nach "high demand" (503) und dem bereits behobenen generischen 20/Minute-Kontingent nun auch das tagesbezogene Pro-Modell-Kontingent. Alle drei Fälle werden jetzt einheitlich über denselben Fallback-Mechanismus behandelt.
+
+---
+
+## 2026-09-21 — Live-Vorfall: Fallback-Modell selbst bekam keinen Retry
+
+Direkt nach dem Deploy des quotenbewussten Fallbacks (siehe oben) erneut live getestet. Die Logs zeigen: Der Fallback griff diesmal korrekt ("Primäres Chat-Modell gemini-3.7-flash hat Kontingent erschöpft, weiche auf gemini-3.5-flash aus") — der Nutzer bekam aber trotzdem wieder "KI-Service ist momentan nicht verfügbar".
+
+**Root Cause:** Der Fallback-Aufruf selbst schlug mit `504 DEADLINE_EXCEEDED` (ein `ServerError`, laut Google "usually temporary") fehl. Anders als der primäre Modell-Aufruf lief der Fallback-Aufruf aber nicht über `_call_with_retry` — ein einzelner transienter Fehler auf dem Fallback-Modell führte deshalb sofort zur endgültigen 503-Fehlermeldung, ohne den einmaligen Wiederholungsversuch, den das primäre Modell längst hat.
+
+**Fix:** Der Fallback-Aufruf in `_generate_content_with_fallback()` läuft jetzt ebenfalls über `_call_with_retry` — symmetrisch zum primären Modell. Ein `ClientError 429` auf dem Fallback-Modell wird weiterhin bewusst nicht wiederholt (dasselbe Modell hat dann sein eigenes Kontingent für den Rest des Tages verbraucht, ein Retry würde nichts ändern), nur `ServerError`/Timeout auf dem Fallback-Modell bekommen jetzt denselben Schutz wie beim primären Modell. Ein neuer Regressionstest (Fallback-Modell scheitert einmal transient, erholt sich beim eigenen Retry) sowie Anpassung zweier bestehender Tests, die die neue, korrekte Anrufzahl (2 statt 1 Versuch pro Modell im Worst Case) widerspiegeln.
+
+**Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **141 Tests grün**.
+
+**Ergebnis:** Die Retry-Logik ist jetzt für beide Modelle symmetrisch, statt nur für das primäre. Der zugrundeliegende Google-seitige Engpass (heute mehrfach beobachtet: 503 auf beiden Modellen gleichzeitig, dazu ein Tages-Kontingent von nur 20 Anfragen pro Modell) bleibt ein reales Free-Tier-Limit, das kein Code-Fix vollständig auflösen kann — die App reagiert darauf inzwischen aber so robust wie mit den verfügbaren Mitteln möglich (Retry pro Modell, Modell-Fallback, begrenzte Gesamt-Wartezeit durch das Timeout).

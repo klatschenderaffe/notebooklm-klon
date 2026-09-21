@@ -74,7 +74,12 @@ def _generate_content_with_fallback(contents: Any, config: types.GenerateContent
 
     Ein reiner Retry auf demselben Modell überbrückt keinen der beiden Fälle, wenn die
     Störung länger als der kurze Retry-Delay anhält bzw. das Kontingent für den Rest
-    des Tages erschöpft ist (siehe config.py, gemini_chat_model_fallback)."""
+    des Tages erschöpft ist (siehe config.py, gemini_chat_model_fallback).
+
+    Live gefunden: der Fallback-Aufruf selbst schlug einmal mit einem transienten
+    504 DEADLINE_EXCEEDED fehl (ServerError) und gab sofort auf, ohne den einmaligen
+    Retry zu bekommen, den das primäre Modell schon hat -- der Fallback-Aufruf läuft
+    deshalb jetzt ebenfalls über _call_with_retry."""
     try:
         return _call_with_retry(
             lambda: get_client().models.generate_content(
@@ -97,8 +102,10 @@ def _generate_content_with_fallback(contents: Any, config: types.GenerateContent
             settings.gemini_chat_model_fallback,
             exc,
         )
-    return get_client().models.generate_content(
-        model=settings.gemini_chat_model_fallback, contents=contents, config=config
+    return _call_with_retry(
+        lambda: get_client().models.generate_content(
+            model=settings.gemini_chat_model_fallback, contents=contents, config=config
+        )
     )
 
 

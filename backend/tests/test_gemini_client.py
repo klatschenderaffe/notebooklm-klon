@@ -219,8 +219,9 @@ def test_generate_answer_gives_up_after_one_retry(monkeypatch: pytest.MonkeyPatc
         gemini_client.generate_answer("Frage", ["Kontext"])
 
     assert exc_info.value.status_code == 503
-    # 2 Versuche primäres Modell (initial + Retry) + 1 Versuch Fallback-Modell.
-    assert fake_client.models.call_count == 3
+    # 2 Versuche primäres Modell (initial + Retry) + 2 Versuche Fallback-Modell
+    # (ebenfalls initial + Retry, siehe _generate_content_with_fallback).
+    assert fake_client.models.call_count == 4
 
 
 class _PrimaryFailsFallbackSucceedsModels:
@@ -327,7 +328,9 @@ def test_generate_answer_gives_up_with_503_when_everything_times_out(
         gemini_client.generate_answer("Frage", ["Kontext"])
 
     assert exc_info.value.status_code == 503
-    assert fake_client.models.call_count == 3
+    # 2 Versuche primäres Modell + 2 Versuche Fallback-Modell (beide bekommen jetzt
+    # einen Retry, siehe _generate_content_with_fallback).
+    assert fake_client.models.call_count == 4
 
 
 class _PrimaryQuotaExceededFallbackSucceedsModels:
@@ -365,6 +368,49 @@ def test_generate_answer_falls_back_when_primary_quota_exceeded(
     # Aufruf des primären Modells, direkt gefolgt vom Fallback-Modell.
     assert fake_client.models.calls == [
         gemini_client.settings.gemini_chat_model,
+        gemini_client.settings.gemini_chat_model_fallback,
+    ]
+
+
+class _PrimaryOverloadedFallbackFailsOnceThenSucceedsModels:
+    """Live gefunden: der Fallback-Aufruf selbst scheiterte einmal mit einem
+    transienten 504 DEADLINE_EXCEEDED (ServerError) und gab sofort auf, ohne den
+    einmaligen Retry zu bekommen, den das primäre Modell bereits hatte."""
+
+    def __init__(self, fallback_text: str) -> None:
+        self._fallback_text = fallback_text
+        self.calls: list[str] = []
+        self._fallback_call_count = 0
+
+    def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+        self.calls.append(model)
+        if model == gemini_client.settings.gemini_chat_model:
+            raise genai_errors.ServerError(503, {"message": "high demand"})
+        self._fallback_call_count += 1
+        if self._fallback_call_count == 1:
+            raise genai_errors.ServerError(504, {"message": "deadline exceeded"})
+        return _FakeGenerateContentResponse(self._fallback_text)
+
+
+class _PrimaryOverloadedFallbackFailsOnceThenSucceedsClient:
+    def __init__(self, fallback_text: str) -> None:
+        self.models = _PrimaryOverloadedFallbackFailsOnceThenSucceedsModels(fallback_text)
+
+
+def test_generate_answer_retries_fallback_model_once_on_transient_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gemini_client.time, "sleep", lambda _seconds: None)
+    fake_client = _PrimaryOverloadedFallbackFailsOnceThenSucceedsClient("Antwort Fallback")
+    monkeypatch.setattr(gemini_client, "get_client", lambda: fake_client)
+
+    answer = gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert answer == "Antwort Fallback"
+    assert fake_client.models.calls == [
+        gemini_client.settings.gemini_chat_model,
+        gemini_client.settings.gemini_chat_model,
+        gemini_client.settings.gemini_chat_model_fallback,
         gemini_client.settings.gemini_chat_model_fallback,
     ]
 
