@@ -849,3 +849,19 @@ Nach dem RAG-Fix wurde die betroffene Quelle live neu hochgeladen, um den Fix zu
 **Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **137 Tests grün**.
 
 **Ergebnis:** Ein weiterer, unabhängiger Live-Fund (Timeout-Absicherung fehlte für einen zweiten externen Dienst neben Gemini) behoben; das gleichzeitig aufgetretene Kontingent-Problem war bereits durch bestehende Fehlerbehandlung korrekt abgefangen und hat sich von selbst erledigt.
+
+---
+
+## 2026-09-21 — Live-Vorfall: Fallback griff nicht bei echtem Tages-Kontingent
+
+Erneuter Live-Test nach den beiden vorherigen Fixes zeigte weiterhin eine sehr lange Wartezeit bis zum Fehler. Direkt in den Logs nachvollzogen: zwei unterschiedliche Chat-Versuche kurz hintereinander, beide scheiterten, aber aus unterschiedlichen Gründen.
+
+**Versuch 1:** `gemini-3.7-flash` lieferte den bekannten "high demand"-503, danach griff der Fallback korrekt und versuchte `gemini-3.5-flash` — das war zu diesem Zeitpunkt aber ebenfalls überlastet, sauber als 503 beim Nutzer angekommen (Fallback-Logik funktionierte wie vorgesehen).
+
+**Versuch 2, der eigentliche neue Fund:** `gemini-3.7-flash` lieferte einen `ClientError 429 RESOURCE_EXHAUSTED` — aber diesmal **kein** "high demand", sondern ein echtes Kontingent-Limit: `"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"`, `"quotaDimensions": {"model": "gemini-3.7-flash"}`, `"quotaValue": "20"`. Die Fehlermeldung selbst bestätigt: Das Kontingent gilt **pro Modell**, nicht projektweit. **Root Cause des Bugs:** `_generate_content_with_fallback()` (siehe PR #12) löste den Fallback bisher nur bei `ServerError`/Timeout aus, nicht bei `ClientError`. Ein 429-Kontingentfehler propagierte deshalb direkt zum äußeren Fang durch, ohne dass das Fallback-Modell (mit eigenem, unabhängigem Kontingent-Topf) überhaupt versucht wurde — obwohl genau das hier geholfen hätte.
+
+**Fix:** `_generate_content_with_fallback()` fängt jetzt zusätzlich `genai_errors.ClientError` und prüft den Statuscode: nur bei `429` (Kontingent erschöpft) wird auf das Fallback-Modell ausgewichen, jeder andere `ClientError` (z.B. 400 durch eine ungültige Anfrage) schlägt weiterhin direkt durch, da ein Modellwechsel dort nichts ändern würde. Drei neue Regressionstests (Fallback bei 429 erfolgreich, beide Modelle mit 429 → sauberes 503, ein Nicht-Kontingent-`ClientError` löst KEINEN unnötigen Fallback-Versuch aus).
+
+**Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **140 Tests grün**.
+
+**Ergebnis:** Die dritte, unterschiedliche Facette desselben Grundproblems (Google-seitige Kapazitäts-/Kontingent-Grenzen im Free Tier) gefunden und behoben — nach "high demand" (503) und dem bereits behobenen generischen 20/Minute-Kontingent nun auch das tagesbezogene Pro-Modell-Kontingent. Alle drei Fälle werden jetzt einheitlich über denselben Fallback-Mechanismus behandelt.

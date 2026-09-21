@@ -53,16 +53,28 @@ def _call_with_retry[T](fn: Callable[[], T], *, retry_delay_seconds: float = 1.5
         return fn()
 
 
+_QUOTA_EXCEEDED_STATUS_CODE = 429
+
+
 def _generate_content_with_fallback(contents: Any, config: types.GenerateContentConfig) -> Any:
     """Ruft generate_content mit dem primären Chat-Modell auf (inkl. Einmal-Retry via
-    _call_with_retry) und weicht bei einem erneut anhaltenden ServerError auf ein
-    zweites, unabhängiges Modell aus, statt denselben (aktuell überlasteten)
-    Modell-Endpunkt ein drittes Mal zu versuchen. Live beobachtet: gemini-3.6-flash
-    UND später am selben Tag auch gemini-3.7-flash gerieten unabhängig voneinander in
-    Googles "high demand"-Zustand -- ein Fallback auf ein anderes Modell überbrückt
-    genau dieses Muster, ein reiner Retry auf demselben Modell tut das nicht, wenn die
-    Überlastung länger als der kurze Retry-Delay anhält (siehe config.py,
-    gemini_chat_model_fallback)."""
+    _call_with_retry) und weicht auf ein zweites, unabhängiges Modell aus, statt
+    denselben Modell-Endpunkt ein drittes Mal zu versuchen, wenn entweder:
+
+    - der ServerError/Timeout auch nach dem Retry anhält (live beobachtet: sowohl
+      gemini-3.6-flash als auch später am selben Tag gemini-3.7-flash gerieten
+      unabhängig voneinander in Googles "high demand"-Zustand), oder
+    - ein ClientError mit Status 429 (Kontingent erschöpft) auftritt. Live gefunden:
+      die Fehlermeldung selbst zeigt, dass das Kontingent PRO MODELL gilt
+      ("quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+      "quotaDimensions": {"model": "gemini-3.7-flash"}) -- ein Fallback auf ein
+      anderes Modell mit eigenem, unabhängigem Kontingent-Topf kann hier tatsächlich
+      helfen, anders als ein Retry auf demselben Modell (dessen Kontingent bleibt
+      erschöpft, siehe _call_with_retry oben).
+
+    Ein reiner Retry auf demselben Modell überbrückt keinen der beiden Fälle, wenn die
+    Störung länger als der kurze Retry-Delay anhält bzw. das Kontingent für den Rest
+    des Tages erschöpft ist (siehe config.py, gemini_chat_model_fallback)."""
     try:
         return _call_with_retry(
             lambda: get_client().models.generate_content(
@@ -76,9 +88,18 @@ def _generate_content_with_fallback(contents: Any, config: types.GenerateContent
             settings.gemini_chat_model_fallback,
             exc,
         )
-        return get_client().models.generate_content(
-            model=settings.gemini_chat_model_fallback, contents=contents, config=config
+    except genai_errors.ClientError as exc:
+        if exc.code != _QUOTA_EXCEEDED_STATUS_CODE:
+            raise
+        logger.warning(
+            "Primäres Chat-Modell %s hat Kontingent erschöpft, weiche auf %s aus: %s",
+            settings.gemini_chat_model,
+            settings.gemini_chat_model_fallback,
+            exc,
         )
+    return get_client().models.generate_content(
+        model=settings.gemini_chat_model_fallback, contents=contents, config=config
+    )
 
 
 SYSTEM_INSTRUCTION = (
