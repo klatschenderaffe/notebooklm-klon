@@ -120,6 +120,17 @@ def test_upload_source_cleans_up_on_chunk_insert_failure(
     assert len(deleted_source_ids) == 1
 
 
+def test_upload_source_rejects_invalid_encoding(client: TestClient) -> None:
+    """Regression test: eine .md-Datei mit ungültigem UTF-8 muss als 422 mit klarer
+    Meldung beantwortet werden, nicht als generischer 500 (siehe test_text_extraction.py
+    für den Unit-Test der zugrunde liegenden ValueError)."""
+    response = client.post(
+        BASE,
+        files={"file": ("notiz.md", io.BytesIO(b"\xff\xfe invalid"), "text/markdown")},
+    )
+    assert response.status_code == 422
+
+
 def test_upload_source_rejects_empty_text(client: TestClient) -> None:
     response = client.post(
         BASE,

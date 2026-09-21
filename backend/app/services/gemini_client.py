@@ -1,12 +1,21 @@
 import json
+import logging
 from functools import lru_cache
 from typing import Any, cast
 
+from fastapi import HTTPException
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from app.config import settings
 from app.services.design import ALLOWED_FONTS
+
+logger = logging.getLogger(__name__)
+
+GEMINI_UNAVAILABLE_DETAIL = (
+    "KI-Service ist momentan nicht verfügbar. Bitte versuche es später erneut."
+)
 
 SYSTEM_INSTRUCTION = (
     "Du bist ein Assistent, der ausschließlich auf Basis der bereitgestellten Quellenausschnitte "
@@ -51,11 +60,19 @@ def embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
 def generate_answer(question: str, context_chunks: list[str]) -> str:
     context = "\n\n---\n\n".join(context_chunks) if context_chunks else "(keine Quellen gefunden)"
     prompt = f"Quellenausschnitte:\n\n{context}\n\nFrage: {question}"
-    response = get_client().models.generate_content(
-        model=settings.gemini_chat_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION),
-    )
+    # Kontingent erschöpft oder Service down (live beobachtet: transiente 503 "high
+    # demand"-Fehler, siehe PROGRESS.md) propagieren sonst ungefangen bis zum
+    # generischen 500-Handler, statt dem Nutzer verständlich zu machen, dass es an der
+    # KI liegt und ein erneuter Versuch sinnvoll ist.
+    try:
+        response = get_client().models.generate_content(
+            model=settings.gemini_chat_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION),
+        )
+    except genai_errors.APIError as exc:
+        logger.warning("Gemini-API-Fehler bei generate_answer: %s", exc)
+        raise HTTPException(status_code=503, detail=GEMINI_UNAVAILABLE_DETAIL) from exc
     return response.text or ""
 
 
@@ -84,54 +101,78 @@ def generate_presentation_outline(
     prompt = "\n\n".join(instructions)
 
     font_enum = ALLOWED_FONTS
-    response = get_client().models.generate_content(
-        model=settings.gemini_chat_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=OUTLINE_INSTRUCTION,
-            response_mime_type="application/json",
-            response_schema={
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "design": {
                 "type": "object",
+                "description": (
+                    "Farbschema passend zur gewünschten Design-Beschreibung "
+                    "(oder neutral/modern falls keine angegeben ist). "
+                    "background_color/accent_color/text_color müssen Hex-Farbcodes "
+                    "im Format #RRGGBB sein, mit gutem Kontrast zwischen text_color "
+                    "und background_color."
+                ),
                 "properties": {
-                    "title": {"type": "string"},
-                    "design": {
-                        "type": "object",
-                        "description": (
-                            "Farbschema passend zur gewünschten Design-Beschreibung "
-                            "(oder neutral/modern falls keine angegeben ist). "
-                            "background_color/accent_color/text_color müssen Hex-Farbcodes "
-                            "im Format #RRGGBB sein, mit gutem Kontrast zwischen text_color "
-                            "und background_color."
-                        ),
-                        "properties": {
-                            "background_color": {"type": "string"},
-                            "accent_color": {"type": "string"},
-                            "text_color": {"type": "string"},
-                            "heading_font": {"type": "string", "enum": font_enum},
-                            "body_font": {"type": "string", "enum": font_enum},
-                        },
-                        "required": [
-                            "background_color",
-                            "accent_color",
-                            "text_color",
-                            "heading_font",
-                            "body_font",
-                        ],
-                    },
-                    "slides": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "title": {"type": "string"},
-                                "bullets": {"type": "array", "items": {"type": "string"}},
-                            },
-                            "required": ["title", "bullets"],
-                        },
-                    },
+                    "background_color": {"type": "string"},
+                    "accent_color": {"type": "string"},
+                    "text_color": {"type": "string"},
+                    "heading_font": {"type": "string", "enum": font_enum},
+                    "body_font": {"type": "string", "enum": font_enum},
                 },
-                "required": ["title", "design", "slides"],
+                "required": [
+                    "background_color",
+                    "accent_color",
+                    "text_color",
+                    "heading_font",
+                    "body_font",
+                ],
             },
-        ),
-    )
-    return cast(dict[str, Any], json.loads(response.text or "{}"))
+            "slides": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "bullets": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["title", "bullets"],
+                },
+            },
+        },
+        "required": ["title", "design", "slides"],
+    }
+
+    # Gleiche Absicherung wie generate_answer() -- beide rufen dieselbe Art API auf und
+    # sollen bei Kontingent-/Service-Fehlern konsistent mit 503 statt einem generischen
+    # 500 antworten.
+    try:
+        response = get_client().models.generate_content(
+            model=settings.gemini_chat_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=OUTLINE_INSTRUCTION,
+                response_mime_type="application/json",
+                response_schema=response_schema,
+            ),
+        )
+    except genai_errors.APIError as exc:
+        logger.warning("Gemini-API-Fehler bei generate_presentation_outline: %s", exc)
+        raise HTTPException(status_code=503, detail=GEMINI_UNAVAILABLE_DETAIL) from exc
+
+    # Trotz response_mime_type="application/json" liefert Gemini ausnahmsweise kein
+    # valides JSON zurück -- ein rohes json.loads() würde hier mit JSONDecodeError bis
+    # zum generischen 500-Handler durchschlagen, statt dem Nutzer klarzumachen, dass
+    # die KI-Antwort diesmal nicht verwertbar war.
+    try:
+        return cast(dict[str, Any], json.loads(response.text or "{}"))
+    except json.JSONDecodeError as exc:
+        logger.warning("Ungültiges JSON von Gemini bei generate_presentation_outline: %s", exc)
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Präsentationsgliederung konnte nicht verarbeitet werden "
+                "(ungültiges Format von der KI)"
+            ),
+        ) from exc

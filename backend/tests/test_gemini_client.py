@@ -1,6 +1,8 @@
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
+from google.genai import errors as genai_errors
 from google.genai import types
 
 import app.services.gemini_client as gemini_client
@@ -58,3 +60,70 @@ def test_embed_texts_returns_empty_list_for_no_texts(monkeypatch: pytest.MonkeyP
 
     assert gemini_client.embed_texts([], task_type="RETRIEVAL_DOCUMENT") == []
     assert fake_client.models.last_contents is None
+
+
+class _FakeGenerateContentResponse:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _FailingModels:
+    """Simuliert einen fehlschlagenden Gemini-API-Call (Kontingent erschöpft, Service
+    down, etc.), wie live bereits mit transienten 503 "high demand"-Fehlern
+    beobachtet."""
+
+    def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+        raise genai_errors.APIError(503, {"message": "The model is overloaded."})
+
+
+class _FailingClient:
+    def __init__(self) -> None:
+        self.models = _FailingModels()
+
+
+class _RespondingModels:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def generate_content(self, model: str, contents: Any, config: Any) -> Any:
+        return _FakeGenerateContentResponse(self._text)
+
+
+class _RespondingClient:
+    def __init__(self, text: str) -> None:
+        self.models = _RespondingModels(text)
+
+
+def test_generate_answer_raises_503_on_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression test: ein fehlschlagender Gemini-Call darf nicht ungefangen bis zum
+    generischen 500-Handler durchschlagen, sondern muss als klare 503 erkennbar sein."""
+    monkeypatch.setattr(gemini_client, "get_client", lambda: _FailingClient())
+
+    with pytest.raises(HTTPException) as exc_info:
+        gemini_client.generate_answer("Frage", ["Kontext"])
+
+    assert exc_info.value.status_code == 503
+
+
+def test_generate_presentation_outline_raises_503_on_api_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gemini_client, "get_client", lambda: _FailingClient())
+
+    with pytest.raises(HTTPException) as exc_info:
+        gemini_client.generate_presentation_outline("Thema", ["Kontext"])
+
+    assert exc_info.value.status_code == 503
+
+
+def test_generate_presentation_outline_raises_422_on_invalid_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: liefert Gemini trotz response_mime_type='application/json'
+    ausnahmsweise kein valides JSON, darf keine rohe JSONDecodeError durchschlagen."""
+    monkeypatch.setattr(gemini_client, "get_client", lambda: _RespondingClient("nicht-json{{"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        gemini_client.generate_presentation_outline("Thema", ["Kontext"])
+
+    assert exc_info.value.status_code == 422
