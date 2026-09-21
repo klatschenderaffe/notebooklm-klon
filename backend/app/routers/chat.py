@@ -31,6 +31,17 @@ def chat(
     [query_embedding] = embed_texts([chat_request.question], task_type="RETRIEVAL_QUERY")
     all_matches = vector_store.similarity_search(notebook_id, query_embedding)
     matches = [m for m in all_matches if m["similarity"] >= settings.chat_similarity_threshold]
+    # Live gefunden: der reine Schwellenwert-Filter konnte den besten -- oft einzigen
+    # inhaltlich passenden -- Treffer komplett ausschließen, wenn seine Ähnlichkeit nur
+    # knapp unter dem Schwellenwert lag (z.B. 0.62 bei 0.7), obwohl die Antwort
+    # nachweislich in der Quelle stand. match_chunks liefert bereits absteigend nach
+    # Ähnlichkeit sortiert (siehe "order by ... <=> ..." in der SQL-Funktion), daher ist
+    # all_matches[0] immer der beste verfügbare Treffer für dieses Notebook. Der wird
+    # jetzt immer aufgenommen, unabhängig vom Schwellenwert -- der filtert nur noch
+    # zusätzliche, schwächere Treffer heraus, die reine Ähnlichkeits-Zufallstreffer sein
+    # könnten (siehe test_chat_filters_out_low_similarity_matches).
+    if all_matches and not matches:
+        matches = [all_matches[0]]
 
     answer = generate_answer(chat_request.question, [match["content"] for match in matches])
     citations = [
