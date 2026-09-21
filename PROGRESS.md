@@ -893,3 +893,17 @@ Direkt nach dem letzten Fix erneut live getestet: das primäre Modell scheiterte
 **Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **140 Tests grün**.
 
 **Ergebnis:** Bewusste Entscheidung, Resilienz gegen Geschwindigkeit einzutauschen, nachdem die heutigen Live-Daten zeigten, dass der Gleich-Modell-Retry in der aktuellen, anhaltenden Free-Tier-Störung praktisch nutzlos war. Der Chat liefert jetzt spürbar schneller eine klare Fehlermeldung, statt bis zu zwei Minuten zu warten, ohne dabei die Präsentations-Generierung durch ein zu kurzes Timeout zu gefährden.
+
+---
+
+## 2026-09-21 — Alle vier Flash-Modelle gleichzeitig betroffen, Rückwechsel auf gemini-3.6-flash
+
+Nach dem Latenz-Fix erneut live getestet (jetzt tatsächlich nur noch ~30s statt ~120s bis zur Fehlermeldung, Fix bestätigt) — aber `gemini-3.7-flash` (Tages-Kontingent erschöpft) und `gemini-3.5-flash` (echter Server-Timeout, 504) scheiterten weiterhin. Im Google AI Studio Ratenbegrenzungs-Dashboard direkt nachgesehen statt geraten: `gemini-3.6-flash` UND `gemini-3.7-flash` standen beide bei ihrem Tages-Kontingent (RPD) im roten Bereich. Ein viertes Modell, `gemini-3.8-flash` (im Dashboard mit der meisten Kontingent-Reserve), live einzeln getestet — lieferte ebenfalls sofort `503 high demand`. **Damit waren zum Testzeitpunkt alle vier verfügbaren Flash-Modelle gleichzeitig beeinträchtigt** — ein noch weiteres Fallback-Modell hätte in diesem Moment nichts gebracht, da die Störung offenbar die gesamte Modell-Familie im Free Tier betraf, nicht nur einzelne Modelle.
+
+**Recherche zur Kontingent-Reset-Zeit:** In Googles eigener Dokumentation (ai.google.dev/gemini-api/docs/rate-limits) nachgesehen statt angenommen: *"Requests per day (RPD) quotas reset at midnight Pacific time."* — für die Nutzerin (CEST) entspricht das ca. 09:00 Uhr morgens (±1h Unsicherheit, da das AI-Studio-Dashboard selbst durchgehend "UTC-8" statt des eigentlich für Pacific Time im September gültigen "UTC-7" (Sommerzeit) anzeigt).
+
+**Nutzerwunsch:** Zurück auf `gemini-3.6-flash` als Standardmodell (war vor dem 21.09. tagelang stabil; die heutigen Ausfälle über alle vier Modelle hinweg werden als reine Folge der intensiven Test-Session des Tages eingeordnet, nicht als grundsätzliches Problem mit 3.6 selbst). `gemini_chat_model` in `config.py`/`.env.example` entsprechend zurückgestellt, Kommentare aktualisiert (inklusive der neu recherchierten Reset-Zeit). `gemini_chat_model_fallback` unverändert bei `gemini-3.5-flash` belassen (kein Anlass für eine Änderung).
+
+**Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **140 Tests grün** (Tests referenzieren `settings.gemini_chat_model` dynamisch, keine Anpassung nötig).
+
+**Ergebnis:** Der heutige Vorfall bestätigt: bei einer wirklich breiten, alle Modelle einer Familie betreffenden Free-Tier-Störung kann kein Fallback-Ketten-Design das grundsätzliche Problem lösen — nur Zeit (Kontingent-Reset) oder ein Wechsel auf einen bezahlten Tarif. Die App reagiert darauf inzwischen so gut wie mit Bordmitteln möglich (schnelles, klares Scheitern statt Hänger); das Standardmodell wurde nach Rücksprache auf den zuvor tagelang bewährten Stand zurückgesetzt.
