@@ -5,10 +5,7 @@ from app.services.supabase_client import get_client
 
 def insert_note(source_id: str, content: str) -> dict[str, Any]:
     response = (
-        get_client()
-        .table("notes")
-        .insert({"source_id": source_id, "content": content})
-        .execute()
+        get_client().table("notes").insert({"source_id": source_id, "content": content}).execute()
     )
     return cast(dict[str, Any], response.data[0])
 
@@ -27,11 +24,6 @@ def list_notes(source_id: str) -> list[dict[str, Any]]:
 
 def delete_note(source_id: str, note_id: str) -> bool:
     response = (
-        get_client()
-        .table("notes")
-        .delete()
-        .eq("id", note_id)
-        .eq("source_id", source_id)
-        .execute()
+        get_client().table("notes").delete().eq("id", note_id).eq("source_id", source_id).execute()
     )
     return bool(response.data)

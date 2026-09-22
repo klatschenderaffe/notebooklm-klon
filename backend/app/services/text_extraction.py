@@ -31,9 +31,7 @@ def extract_text(filename: str, content: bytes) -> str:
     try:
         return content.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise ValueError(
-            f"Datei hat ungültiges Encoding, erwartet wird UTF-8: {filename}"
-        ) from exc
+        raise ValueError(f"Datei hat ungültiges Encoding, erwartet wird UTF-8: {filename}") from exc
 
 
 def _extract_pdf_text(content: bytes) -> str:

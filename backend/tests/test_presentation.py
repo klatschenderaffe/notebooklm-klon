@@ -53,9 +53,7 @@ def test_build_presentation_applies_custom_design_colors() -> None:
         "heading_font": "Georgia",
         "body_font": "Arial",
     }
-    pptx_bytes = build_presentation(
-        "Titel", [{"title": "Folie", "bullets": ["X"]}], design=design
-    )
+    pptx_bytes = build_presentation("Titel", [{"title": "Folie", "bullets": ["X"]}], design=design)
     prs = Presentation(io.BytesIO(pptx_bytes))
 
     bg = prs.slides[0].background.fill.fore_color.rgb

@@ -14,9 +14,7 @@ def list_notebooks(user_id: str = Depends(get_current_user_id)) -> list[dict]:
 
 
 @router.post("", response_model=NotebookOut, status_code=201)
-def create_notebook(
-    body: NotebookCreate, user_id: str = Depends(get_current_user_id)
-) -> dict:
+def create_notebook(body: NotebookCreate, user_id: str = Depends(get_current_user_id)) -> dict:
     return notebooks_store.create_notebook(user_id, body.name)
 
 

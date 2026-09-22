@@ -7,9 +7,7 @@ from app.services.supabase_client import get_client
 
 
 def create_notebook(user_id: str, name: str) -> dict[str, Any]:
-    response = (
-        get_client().table("notebooks").insert({"user_id": user_id, "name": name}).execute()
-    )
+    response = get_client().table("notebooks").insert({"user_id": user_id, "name": name}).execute()
     return cast(dict[str, Any], response.data[0])
 
 
@@ -97,9 +95,7 @@ def list_presentation_storage_paths(notebook_id: str) -> list[str]:
     return [row["storage_path"] for row in rows]
 
 
-def require_owned_notebook_id(
-    notebook_id: str, user_id: str = Depends(get_current_user_id)
-) -> str:
+def require_owned_notebook_id(notebook_id: str, user_id: str = Depends(get_current_user_id)) -> str:
     """FastAPI-Dependency für notebook-scoped Router (sources/chat/presentations):
     prüft Auth + Eigentümerschaft in einem Schritt, gibt die geprüfte notebook_id zurück."""
     get_owned_notebook(user_id, notebook_id)
