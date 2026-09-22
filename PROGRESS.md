@@ -907,3 +907,27 @@ Nach dem Latenz-Fix erneut live getestet (jetzt tatsächlich nur noch ~30s statt
 **Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **140 Tests grün** (Tests referenzieren `settings.gemini_chat_model` dynamisch, keine Anpassung nötig).
 
 **Ergebnis:** Der heutige Vorfall bestätigt: bei einer wirklich breiten, alle Modelle einer Familie betreffenden Free-Tier-Störung kann kein Fallback-Ketten-Design das grundsätzliche Problem lösen — nur Zeit (Kontingent-Reset) oder ein Wechsel auf einen bezahlten Tarif. Die App reagiert darauf inzwischen so gut wie mit Bordmitteln möglich (schnelles, klares Scheitern statt Hänger); das Standardmodell wurde nach Rücksprache auf den zuvor tagelang bewährten Stand zurückgesetzt.
+
+---
+
+## 2026-09-22 — Abschluss-Politur vor der Abgabe
+
+Letzter Durchgang durch das gesamte Repository vor der Projektabgabe.
+
+**Unabhängige Sicherheitsprüfung** (per `code-reviewer-pro`) speziell für alle Änderungen des Vortages, die noch nicht im morgendlichen Review-Durchgang (PR #6–#8) erfasst waren: keine neuen Sicherheitslücken gefunden. Insbesondere geprüft: keine Informationslecks in den neuen Fehlerbehandlungspfaden (Gemini-Retry/Fallback, Storage-Retry), Notebook-/Nutzer-Isolation bleibt bei der gelockerten RAG-Ähnlichkeits-Filterung durch `target_notebook_id` und RLS gewahrt, kein neuer Ressourcen-Erschöpfungs-Vektor durch den Chunking-Fix, keine Secrets in `CLAUDE.md`/`config.py`/`.env.example`, kein Kostenverstärkungs-Risiko durch die neue Retry-/Fallback-Logik (weiterhin durch das bestehende `10/Minute`-Rate-Limit begrenzt).
+
+**`README.md` grundlegend überarbeitet** — mehrere echte, durch die Projektentwicklung entstandene Ungenauigkeiten gefunden und behoben:
+- Frontend-Hosting stand noch als "Cloudflare Pages", tatsächlich seit einiger Zeit "Cloudflare Workers" (Workers-with-Assets).
+- Supabase-Setup-Anleitung verwies auf eine nicht mehr existierende `backend/supabase/schema.sql` — das Schema liegt inzwischen als versionierte Migrationsreihe in `backend/supabase/migrations/` vor.
+- Der zweite benötigte Storage-Bucket (`presentations`, für generierte Präsentationen) fehlte in der Setup-Anleitung komplett — nur `sources` war dokumentiert.
+- Die Branch-Strategie-Sektion behauptete noch "Diese Staging-Infrastruktur existiert noch nicht" — obwohl Staging seit Phase 5 vollständig aufgebaut und heute den ganzen Tag über intensiv genutzt wurde.
+- Frontend-`.env.local`-Anleitung erweckte den Eindruck, nur `VITE_API_URL` sei relevant, obwohl `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` Pflichtfelder sind (die App startet ohne sie gar nicht, siehe `supabaseClient.ts`).
+- Ergänzt: Monitoring-Zeile (Sentry, UptimeRobot) in der Architektur-Tabelle, E2E-Tests im Qualitätssicherungs-Abschnitt, Verweis auf `CLAUDE.md`.
+
+**Code-Formatierung vereinheitlicht:** `ruff format .` über das komplette Backend laufen lassen (11 Dateien reformatiert, reine Whitespace-Änderungen, keine Logik betroffen) — aufgefallen dabei: `ruff format --check` ist gar nicht Teil des CI-Gates (`ci.yml` führt nur `ruff check`, `mypy`, `pytest` aus), weshalb die Formatierungs-Drift nie einen CI-Lauf rot werden ließ. Trotzdem für den Gesamteindruck bereinigt.
+
+**Weitere Prüfungen ohne Befund:** keine `console.log`/`debugger`-Reste im Frontend, keine `print()`/`pdb`-Reste im Backend, kein offener `TODO`/`FIXME`/`XXX`-Kommentar im Produktivcode, kein Treffer bei einer manuellen Secret-Muster-Suche (Gemini-/Supabase-Key-Präfixe, JWT-Struktur) über alle von Git getrackten Dateien.
+
+**Verifikation:** Backend `ruff check`/`ruff format --check`/`mypy app`/`pytest -q` → **140 Tests grün**. Frontend `npm run lint`/`npm run build` → sauber (ein nicht-blockierender Hinweis zur Chunk-Größe, kein Fehler).
+
+**Ergebnis:** Repository ist abgabebereit — Dokumentation entspricht wieder dem tatsächlichen Stand, Code ist einheitlich formatiert, keine offenen Sicherheits- oder Debug-Reste gefunden.

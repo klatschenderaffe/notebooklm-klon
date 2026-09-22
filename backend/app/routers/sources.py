@@ -122,9 +122,7 @@ def add_url_source(
 
 
 @router.delete("/{source_id}", status_code=204)
-def delete_source(
-    source_id: str, notebook_id: str = Depends(require_owned_notebook_id)
-) -> None:
+def delete_source(source_id: str, notebook_id: str = Depends(require_owned_notebook_id)) -> None:
     source = vector_store.get_source(notebook_id, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Quelle nicht gefunden")

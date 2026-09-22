@@ -87,9 +87,7 @@ def test_rate_limit_response_uses_detail_field_with_german_message(
 
 
 def _bearer_header_for(user_id: str) -> dict[str, str]:
-    token = jwt.encode(
-        {"sub": user_id, "aud": "authenticated"}, "test-secret", algorithm="HS256"
-    )
+    token = jwt.encode({"sub": user_id, "aud": "authenticated"}, "test-secret", algorithm="HS256")
     return {"Authorization": f"Bearer {token}"}
 
 

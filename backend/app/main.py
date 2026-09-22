@@ -106,6 +106,7 @@ def _handle_rate_limit_exceeded(request: Request, exc: RateLimitExceeded) -> JSO
         content={"detail": "Zu viele Anfragen. Bitte warte kurz und versuche es erneut."},
     )
 
+
 # app.state.limiter wird von slowapi intern gelesen (siehe slowapi/extension.py), und
 # von den @limiter.limit(...)-Decorators auf den einzelnen Router-Endpunkten verwendet
 # (siehe app/rate_limit.py für die Begründung des In-Memory-Limiters und den

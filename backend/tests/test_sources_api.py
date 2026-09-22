@@ -232,5 +232,3 @@ def test_add_url_source_extraction_failure_returns_422(
     response = client.post(f"{BASE}/url", json={"url": "https://does-not-exist.invalid"})
 
     assert response.status_code == 422
-
-

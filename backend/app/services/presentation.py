@@ -37,9 +37,7 @@ def _add_title_slide(prs: Any, title: str, design: dict[str, str]) -> None:
     _set_background(slide, design["background_color"])
     _add_accent_bar(slide, design["accent_color"])
 
-    title_box = slide.shapes.add_textbox(
-        MARGIN, Inches(3.0), SLIDE_WIDTH - 2 * MARGIN, Inches(1.5)
-    )
+    title_box = slide.shapes.add_textbox(MARGIN, Inches(3.0), SLIDE_WIDTH - 2 * MARGIN, Inches(1.5))
     tf = title_box.text_frame
     tf.word_wrap = True
     tf.text = title
@@ -65,9 +63,7 @@ def _add_content_slide(prs: Any, slide_data: dict[str, Any], design: dict[str, s
     _set_background(slide, design["background_color"])
     _add_accent_bar(slide, design["accent_color"])
 
-    title_box = slide.shapes.add_textbox(
-        MARGIN, Inches(0.4), SLIDE_WIDTH - 2 * MARGIN, Inches(0.9)
-    )
+    title_box = slide.shapes.add_textbox(MARGIN, Inches(0.4), SLIDE_WIDTH - 2 * MARGIN, Inches(0.9))
     ttf = title_box.text_frame
     ttf.word_wrap = True
     ttf.text = slide_data.get("title", "")
@@ -77,9 +73,7 @@ def _add_content_slide(prs: Any, slide_data: dict[str, Any], design: dict[str, s
     tp.font.name = design["heading_font"]
     tp.font.color.rgb = _rgb(design["text_color"])
 
-    body_box = slide.shapes.add_textbox(
-        MARGIN, Inches(1.6), SLIDE_WIDTH - 2 * MARGIN, Inches(5.3)
-    )
+    body_box = slide.shapes.add_textbox(MARGIN, Inches(1.6), SLIDE_WIDTH - 2 * MARGIN, Inches(5.3))
     body_tf = body_box.text_frame
     body_tf.word_wrap = True
     bullets = slide_data.get("bullets", [])

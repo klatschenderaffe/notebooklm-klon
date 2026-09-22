@@ -24,9 +24,7 @@ def list_notes(source_id: str = Depends(require_owned_source_id)) -> list[dict]:
 
 
 @router.post("", response_model=NoteOut, status_code=201)
-def add_note(
-    request: NoteCreate, source_id: str = Depends(require_owned_source_id)
-) -> dict:
+def add_note(request: NoteCreate, source_id: str = Depends(require_owned_source_id)) -> dict:
     if not request.content.strip():
         raise HTTPException(status_code=422, detail="Notiz darf nicht leer sein")
     return notes_store.insert_note(source_id, request.content)
